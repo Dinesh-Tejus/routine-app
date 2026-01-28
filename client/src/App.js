@@ -1,12 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import TasksColumn from './components/TasksColumn';
-import ReflectionColumn from './components/ReflectionColumn';
+import ReflectionChat from './components/ReflectionChat';
 import GoalsColumn from './components/GoalsColumn';
+import { BookOpen, MessageSquare, CheckCircle2 } from 'lucide-react';
 import ScheduleSection from './components/ScheduleSection';
 import NoteModal from './components/NoteModal';
+import ChatColumn from './components/ChatColumn';
+import TaskPlannerChat from './components/TaskPlannerChat';
+import ReadingList from './components/ReadingList';
+import Login from './components/Login';
+import { useAuth } from './contexts/AuthContext';
 import { api } from './services/api';
+import { LogOut, Loader2 } from 'lucide-react';
 
 const App = () => {
+  const { user, loading: authLoading, logout } = useAuth();
   const [dailyTasks, setDailyTasks] = useState([]);
   const [weeklyGoals, setWeeklyGoals] = useState([]);
   const [scheduledTasks, setScheduledTasks] = useState([]);
@@ -14,26 +22,53 @@ const App = () => {
     workedOn: '',
     finished: '',
     feedback: '',
-    tomorrowNotes: ''
+    tomorrowNotes: '',
+    chatHistory: [],
+    searchHistory: []
   });
+  const [weeklyHistory, setWeeklyHistory] = useState([]);
   const [yesterdayNotes, setYesterdayNotes] = useState('');
   const [activeNoteModal, setActiveNoteModal] = useState(null);
   const [noteText, setNoteText] = useState('');
+  const [activeTab, setActiveTab] = useState('todos');
+
+  const fetchWeeklyHistory = async () => {
+    try {
+      const res = await api.getWeeklyHistory();
+      setWeeklyHistory(res.data);
+    } catch (error) {
+      console.error('Error fetching weekly history:', error);
+    }
+  };
+
+  const getAdjustedNow = () => {
+    const now = new Date();
+    // If it's before 12:30 AM, treat it as the previous day
+    if (now.getHours() === 0 && now.getMinutes() < 30) {
+      now.setDate(now.getDate() - 1);
+    }
+    return now;
+  };
 
   const getTodayKey = () => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const now = getAdjustedNow();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   };
 
   const getYesterdayKey = () => {
-    const yesterday = new Date();
+    const now = getAdjustedNow();
+    const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     return `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (user) {
+      loadData();
+      fetchWeeklyHistory();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const loadData = async () => {
     try {
@@ -47,11 +82,22 @@ const App = () => {
 
       setDailyTasks(tasksRes.data);
       setWeeklyGoals(goalsRes.data);
-      setScheduledTasks(scheduledRes.data);
 
-      if (todayLogRes.data) {
-        setDailyLog(todayLogRes.data);
-      }
+      // Sync scheduled tasks for today before setting state
+      const { updatedScheduled, updatedDaily } = await syncScheduledToToday(scheduledRes.data, tasksRes.data);
+      setScheduledTasks(updatedScheduled);
+      setDailyTasks(updatedDaily);
+
+      const todayKey = getTodayKey();
+      setDailyLog({
+        workedOn: '',
+        finished: '',
+        feedback: '',
+        tomorrowNotes: '',
+        chatHistory: [],
+        ...todayLogRes.data,
+        date: todayKey
+      });
 
       if (yesterdayLogRes.data && yesterdayLogRes.data.tomorrowNotes) {
         setYesterdayNotes(yesterdayLogRes.data.tomorrowNotes);
@@ -212,6 +258,39 @@ const App = () => {
     }
   };
 
+  const syncScheduledToToday = async (scheduledList, dailyList) => {
+    const todayStr = getTodayKey();
+    const toSync = scheduledList.filter(t => {
+      const d = new Date(t.date);
+      const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return dStr === todayStr;
+    });
+
+    if (toSync.length === 0) return { updatedScheduled: scheduledList, updatedDaily: dailyList };
+
+    let newDaily = [...dailyList];
+    let newScheduled = scheduledList.filter(t => !toSync.find(ts => ts._id === t._id));
+
+    for (const task of toSync) {
+      try {
+        // Create as daily task
+        const newTask = await api.createTask({
+          text: task.text,
+          isEveryday: false,
+          completed: false,
+          notes: ''
+        });
+        newDaily.push(newTask.data);
+        // Delete from scheduled
+        await api.deleteScheduled(task._id);
+      } catch (error) {
+        console.error('Error syncing scheduled task:', error);
+      }
+    }
+
+    return { updatedScheduled: newScheduled, updatedDaily: newDaily };
+  };
+
   const handleDeleteScheduled = async (id) => {
     try {
       await api.deleteScheduled(id);
@@ -221,72 +300,308 @@ const App = () => {
     }
   };
 
-  const handleUpdateLog = async (updatedLog) => {
-    setDailyLog(updatedLog);
+  const handleUpdateScheduledDate = async (id, text, date) => {
     try {
-      await api.saveLog({ ...updatedLog, date: getTodayKey() });
+      const task = scheduledTasks.find(t => t._id === id);
+      const updated = await api.updateScheduled(id, { ...task, text, date });
+
+      // Check if new date is today
+      const todayStr = getTodayKey();
+      const d = new Date(date);
+      const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+      if (dStr === todayStr) {
+        // Immediate sync
+        const { updatedDaily } = await syncScheduledToToday([updated.data], dailyTasks);
+        // We need to merge this back into the main lists
+        setScheduledTasks(scheduledTasks.filter(t => t._id !== id));
+        setDailyTasks(updatedDaily);
+      } else {
+        setScheduledTasks(scheduledTasks.map(t => t._id === id ? updated.data : t));
+      }
+    } catch (error) {
+      console.error('Error updating scheduled task:', error);
+    }
+  };
+
+  const handleAddPlannedTasks = async (tasks) => {
+    const todayStr = getTodayKey();
+
+    for (const task of tasks) {
+      if (task.date === todayStr) {
+        // It's today, add to daily tasks
+        await handleAddTask(task.text + (task.time ? ` @ ${task.time}` : ''));
+      } else {
+        // It's in the future, add to scheduled
+        const [year, month, day] = task.date.split('-').map(Number);
+        const scheduledDate = new Date(year, month - 1, day, 12, 0, 0, 0);
+        await handleAddScheduled(task.text + (task.time ? ` @ ${task.time}` : ''), scheduledDate.toISOString());
+      }
+    }
+  };
+
+  const getWeeklyScheduledTasks = () => {
+    const now = getAdjustedNow();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    return (scheduledTasks || []).filter(task => {
+      const taskDate = new Date(task.date);
+      return taskDate >= startOfWeek && taskDate <= endOfWeek;
+    });
+  };
+
+  const handleUpdateLog = async (updatedData) => {
+    try {
+      const logToSave = {
+        ...dailyLog,
+        ...updatedData,
+        date: getTodayKey()
+      };
+
+      const res = await api.saveDailyLog(logToSave);
+      setDailyLog(res.data);
+
+      if (updatedData.finished) {
+        fetchWeeklyHistory();
+      }
+
+      // Auto-schedule tomorrow's tasks if notes were updated
+      if (updatedData.tomorrowNotes && updatedData.tomorrowNotes !== dailyLog.tomorrowNotes) {
+        const lines = updatedData.tomorrowNotes
+          .split('\n')
+          .map(l => l.replace(/^[-*•]\s*/, '').trim())
+          .filter(l => l.length > 0);
+
+        const tomorrow = new Date(getAdjustedNow());
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(12, 0, 0, 0); // Noon tomorrow
+
+        for (const line of lines) {
+          const exists = (scheduledTasks || []).some(t =>
+            t.text === line &&
+            new Date(t.date).toDateString() === tomorrow.toDateString()
+          );
+
+          if (!exists) {
+            await handleAddScheduled(line, tomorrow.toISOString());
+          }
+        }
+      }
     } catch (error) {
       console.error('Error saving log:', error);
     }
   };
 
+  const handleSearchArticles = async (query) => {
+    try {
+      const response = await api.searchArticles(query);
+      const data = response.data;
+
+      const newHistoryItem = { query, result: data, timestamp: new Date().toISOString() };
+      const currentSearchHistory = dailyLog.searchHistory || [];
+      const updatedSearchHistory = [...currentSearchHistory, newHistoryItem];
+
+      await handleUpdateLog({ searchHistory: updatedSearchHistory });
+
+      return data;
+    } catch (error) {
+      console.error('Error searching articles:', error);
+      throw error;
+    }
+  };
+
+  const handleAddArticleToReadingTask = async (article) => {
+    try {
+      const targetTask = dailyTasks.find(t =>
+        t.isEveryday && t.text.toLowerCase().includes('reading articles')
+      );
+
+      if (!targetTask) {
+        alert('Could not find an everyday task named "Reading Articles". Please create one first!');
+        return;
+      }
+
+      const articleNote = `\n- ${article.title}: ${article.url}`;
+      const newNotes = (targetTask.notes || '') + articleNote;
+
+      const updated = await api.updateTask(targetTask._id, {
+        ...targetTask,
+        notes: newNotes
+      });
+
+      setDailyTasks(dailyTasks.map(t => t._id === targetTask._id ? updated.data : t));
+    } catch (error) {
+      console.error('Error adding article to task:', error);
+      alert('Failed to add article to reading task.');
+    }
+  };
+
+  const getReadingNotes = () => {
+    const targetTask = (dailyTasks || []).find(t =>
+      t.isEveryday && t.text.toLowerCase().includes('reading articles')
+    );
+    return targetTask ? targetTask.notes : '';
+  };
+
+  const getProcessedWeeklyWins = () => {
+    const wins = {};
+    (weeklyHistory || []).forEach(task => {
+      const key = task.text;
+      if (!wins[key]) {
+        wins[key] = { text: task.text, count: 0, isEveryday: task.isEveryday };
+      }
+      wins[key].count += 1;
+    });
+
+    return Object.values(wins).sort((a, b) => {
+      if (a.isEveryday !== b.isEveryday) return a.isEveryday ? -1 : 1;
+      return b.count - a.count;
+    });
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="animate-spin text-indigo-500" size={48} />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-8">
       <div className="max-w-7xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
-            Daily Routine
-          </h1>
-          <p className="text-lg text-slate-400">Track your progress, reflect on your journey</p>
+        <header className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+              Daily Routine
+            </h1>
+            <p className="text-lg text-slate-400">Track your progress, reflect on your journey, {user.userId}</p>
+          </div>
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-red-500/10 border border-slate-700/50 hover:border-red-500/30 rounded-xl text-slate-400 hover:text-red-400 transition-all text-sm font-medium"
+          >
+            <LogOut size={16} />
+            Logout
+          </button>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <TasksColumn
-            dailyTasks={dailyTasks}
-            yesterdayNotes={yesterdayNotes}
-            onToggleComplete={handleToggleTaskComplete}
-            onDeleteTask={handleDeleteTask}
-            onAddTask={handleAddTask}
-            onAddEverydayTask={handleAddEverydayTask}
-            onEditEverydayTask={handleEditEverydayTask}
-            onDeleteEverydayTask={handleDeleteEverydayTask}
-            currentDate={new Date()}
-            scheduleSection={
-              <ScheduleSection
-                scheduledTasks={scheduledTasks}
-                onAddScheduled={handleAddScheduled}
-                onDeleteScheduled={handleDeleteScheduled}
-              />
-            }
-          />
-
-          <ReflectionColumn
-            dailyLog={dailyLog}
-            onUpdateLog={handleUpdateLog}
-          />
-
-          <GoalsColumn
-            weeklyGoals={weeklyGoals}
-            onToggleComplete={handleToggleGoalComplete}
-            onAddGoal={handleAddGoal}
-            onEditGoal={handleEditGoal}
-            onDeleteGoal={handleDeleteGoal}
-          />
+        <div className="flex justify-center mb-8">
+          <div className="flex p-1 bg-slate-900/50 backdrop-blur-md border border-slate-700/50 rounded-2xl shadow-xl">
+            {[
+              { id: 'todos', label: 'To-Dos', icon: CheckCircle2 },
+              { id: 'reading', label: 'Reading', icon: BookOpen },
+              { id: 'logging', label: 'Logging', icon: MessageSquare },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id
+                  ? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/20 scale-105'
+                  : 'text-slate-400 hover:text-slate-200'
+                  }`}
+              >
+                <tab.icon size={18} />
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {activeNoteModal && (
-        <NoteModal
-          task={activeNoteModal}
-          noteText={noteText}
-          onNoteChange={setNoteText}
-          onSave={handleSaveNote}
-          onCancel={() => {
-            setActiveNoteModal(null);
-            setNoteText('');
-          }}
-        />
-      )}
+        <main>
+          {activeTab === 'todos' && (
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="xl:col-span-3">
+                <TaskPlannerChat onAddTasks={handleAddPlannedTasks} />
+              </div>
+
+              <div className="xl:col-span-6">
+                <TasksColumn
+                  dailyTasks={dailyTasks}
+                  yesterdayNotes={yesterdayNotes}
+                  onToggleComplete={handleToggleTaskComplete}
+                  onDeleteTask={handleDeleteTask}
+                  onAddTask={handleAddTask}
+                  onAddEverydayTask={handleAddEverydayTask}
+                  onEditEverydayTask={handleEditEverydayTask}
+                  onDeleteEverydayTask={handleDeleteEverydayTask}
+                  currentDate={getTodayKey()}
+                  scheduleSection={
+                    <ScheduleSection
+                      scheduledTasks={scheduledTasks}
+                      onAddScheduled={handleAddScheduled}
+                      onUpdateScheduled={handleUpdateScheduledDate}
+                      onDeleteScheduled={handleDeleteScheduled}
+                    />
+                  }
+                />
+              </div>
+
+              <div className="xl:col-span-3">
+                <GoalsColumn
+                  weeklyGoals={weeklyGoals}
+                  onToggleComplete={handleToggleGoalComplete}
+                  onDeleteGoal={handleDeleteGoal}
+                  onAddGoal={handleAddGoal}
+                  onEditGoal={handleEditGoal}
+                />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'reading' && (
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="xl:col-span-8">
+                <ChatColumn
+                  onSearch={handleSearchArticles}
+                  onAddArticle={handleAddArticleToReadingTask}
+                  initialMessages={dailyLog.searchHistory?.map(h => [
+                    { type: 'user', text: h.query },
+                    { type: 'bot', ...h.result }
+                  ]).flat() || []}
+                />
+              </div>
+              <div className="xl:col-span-4">
+                <ReadingList notes={getReadingNotes()} />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'logging' && (
+            <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <ReflectionChat
+                dailyLog={dailyLog}
+                onUpdateLog={handleUpdateLog}
+                completedTasks={(dailyTasks || []).filter(t => t.completed).map(t => t.text)}
+                weeklyWins={getProcessedWeeklyWins()}
+              />
+            </div>
+          )}
+        </main>
+
+        {activeNoteModal && (
+          <NoteModal
+            task={activeNoteModal}
+            noteText={noteText}
+            onNoteChange={setNoteText}
+            onSave={handleSaveNote}
+            onCancel={() => {
+              setActiveNoteModal(null);
+              setNoteText('');
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 };

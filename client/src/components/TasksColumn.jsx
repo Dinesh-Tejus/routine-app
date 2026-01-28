@@ -1,6 +1,6 @@
 // client/src/components/TasksColumn.jsx
 import React, { useState } from 'react';
-import { Check, Plus, X, Edit2, Save, Settings } from 'lucide-react';
+import { Check, Plus, X, Edit2, Save, Settings, Flame } from 'lucide-react';
 
 const TasksColumn = ({
   dailyTasks,
@@ -47,7 +47,8 @@ const TasksColumn = ({
     setEditEverydayText('');
   };
 
-  const completedCount = dailyTasks.filter(t => t.completed).length;
+  const safeDailyTasks = dailyTasks || [];
+  const completedCount = safeDailyTasks.filter(t => t.completed).length;
   const formattedDate = new Date(currentDate).toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -56,7 +57,7 @@ const TasksColumn = ({
   });
 
   // Sort tasks: Everyday tasks first, then today's tasks
-  const sortedTasks = [...dailyTasks].sort((a, b) => {
+  const sortedTasks = [...safeDailyTasks].sort((a, b) => {
     if (a.isEveryday === b.isEveryday) return 0;
     return a.isEveryday ? -1 : 1;
   });
@@ -104,8 +105,8 @@ const TasksColumn = ({
               <button
                 onClick={() => onToggleComplete(task._id)}
                 className={`flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-all mt-0.5 ${task.completed
-                    ? 'bg-gradient-to-br from-indigo-500 to-purple-500 border-indigo-500'
-                    : 'border-slate-600 hover:border-indigo-500'
+                  ? 'bg-gradient-to-br from-indigo-500 to-purple-500 border-indigo-500'
+                  : 'border-slate-600 hover:border-indigo-500'
                   }`}
               >
                 {task.completed && <Check size={10} className="text-white" />}
@@ -127,9 +128,17 @@ const TasksColumn = ({
                       {task.text}
                     </p>
                     {task.isEveryday && (
-                      <span className="text-[9px] px-1 py-px bg-slate-800 text-slate-500 rounded border border-slate-700/50 uppercase tracking-tighter">
-                        Daily
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] px-1 py-px bg-slate-800 text-slate-500 rounded border border-slate-700/50 uppercase tracking-tighter">
+                          Daily
+                        </span>
+                        {task.streak > 0 && (
+                          <span className="flex items-center gap-0.5 text-[10px] text-amber-500 font-bold bg-amber-500/10 px-1 py-px rounded border border-amber-500/20">
+                            <Flame size={10} className="fill-amber-500" />
+                            {task.streak}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -183,15 +192,15 @@ const TasksColumn = ({
             onKeyPress={(e) => e.key === 'Enter' && handleAddTask()}
             placeholder={editingEveryday ? "Add everyday task..." : "Add task details..."}
             className={`flex-1 px-2 py-1.5 bg-slate-800/50 border rounded-lg text-xs focus:outline-none focus:ring-1 text-white placeholder-slate-500 transition-colors ${editingEveryday
-                ? 'border-indigo-500/30 focus:ring-indigo-500'
-                : 'border-slate-700 focus:ring-slate-500'
+              ? 'border-indigo-500/30 focus:ring-indigo-500'
+              : 'border-slate-700 focus:ring-slate-500'
               }`}
           />
           <button
             onClick={handleAddTask}
             className={`px-3 py-1.5 text-white rounded-lg transition-all shadow-sm ${editingEveryday
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500'
-                : 'bg-slate-700 hover:bg-slate-600 border border-slate-600'
+              ? 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500'
+              : 'bg-slate-700 hover:bg-slate-600 border border-slate-600'
               }`}
           >
             <Plus size={14} />

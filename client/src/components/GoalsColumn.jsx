@@ -33,19 +33,42 @@ const GoalsColumn = ({
     setEditGoalText('');
   };
 
-  const completedCount = weeklyGoals.filter(g => g.completed).length;
+  const safeGoals = weeklyGoals || [];
+  const completedCount = safeGoals.filter(g => g.completed).length;
+
+  // Calculate week range
+  const getWeekRange = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diff = -dayOfWeek; // Sunday as start of week
+
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() + diff);
+
+    const saturday = new Date(sunday);
+    saturday.setDate(sunday.getDate() + 6);
+
+    const formatDate = (date) => {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    return `${formatDate(sunday)} - ${formatDate(saturday)}`;
+  };
 
   return (
-    <div className="lg:col-span-3 bg-slate-900/50 backdrop-blur-sm rounded-lg shadow-lg p-4 border border-slate-700/50">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-bold text-white">Weekly Goals</h2>
-        <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full text-xs font-semibold border border-blue-500/30">
-          {completedCount}/{weeklyGoals.length}
-        </span>
+    <div className="bg-slate-900/50 backdrop-blur-sm rounded-lg shadow-lg p-4 border border-slate-700/50">
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-base font-bold text-white">Weekly Goals</h2>
+          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full text-xs font-semibold border border-blue-500/30">
+            {completedCount}/{safeGoals.length}
+          </span>
+        </div>
+        <p className="text-xs text-blue-300/60">Week of {getWeekRange()}</p>
       </div>
 
       <div className="space-y-1.5 mb-3">
-        {weeklyGoals.map(goal => (
+        {safeGoals.map(goal => (
           <div
             key={goal._id}
             className="group flex items-start gap-2 p-2 rounded-lg hover:bg-slate-800/50 transition-all border border-transparent hover:border-blue-500/20"
@@ -53,8 +76,8 @@ const GoalsColumn = ({
             <button
               onClick={() => onToggleComplete(goal._id)}
               className={`flex-shrink-0 w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all mt-0.5 ${goal.completed
-                  ? 'bg-gradient-to-br from-blue-500 to-cyan-500 border-blue-500'
-                  : 'border-slate-600 hover:border-blue-500'
+                ? 'bg-gradient-to-br from-blue-500 to-cyan-500 border-blue-500'
+                : 'border-slate-600 hover:border-blue-500'
                 }`}
             >
               {goal.completed && <Check size={14} className="text-white" />}

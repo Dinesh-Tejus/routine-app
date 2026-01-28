@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const WeeklyGoal = require('../models/WeeklyGoal');
+const auth = require('../middleware/auth');
+
+router.use(auth);
 
 router.get('/', async (req, res) => {
   try {
-    const goals = await WeeklyGoal.find();
+    const goals = await WeeklyGoal.find({ userId: req.user.userId });
     res.json(goals);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -13,7 +16,10 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const goal = new WeeklyGoal(req.body);
+    const goal = new WeeklyGoal({
+      ...req.body,
+      userId: req.user.userId
+    });
     await goal.save();
     res.json(goal);
   } catch (error) {
@@ -23,11 +29,12 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const goal = await WeeklyGoal.findByIdAndUpdate(
-      req.params.id,
+    const goal = await WeeklyGoal.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.userId },
       req.body,
       { new: true }
     );
+    if (!goal) return res.status(404).json({ message: 'Goal not found' });
     res.json(goal);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -36,7 +43,11 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    await WeeklyGoal.findByIdAndDelete(req.params.id);
+    const goal = await WeeklyGoal.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.userId
+    });
+    if (!goal) return res.status(404).json({ message: 'Goal not found' });
     res.json({ message: 'Goal deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
