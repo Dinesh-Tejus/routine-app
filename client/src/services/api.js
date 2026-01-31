@@ -33,4 +33,5 @@ export const api = {
   processReflection: (text, currentLog = {}) => axios.post(`${API_BASE_URL}/reflection/process`, { text, currentLog }),
   parseTasks: (text) => axios.post(`${API_BASE_URL}/planner/parse`, { text }),
   getWeeklyHistory: () => axios.get(`${API_BASE_URL}/tasks/history/weekly`),
+  validateLockCriteria: (criteria, notes) => axios.post(`${API_BASE_URL}/tasks/validate-lock`, { criteria, notes }),
 };

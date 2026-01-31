@@ -5,6 +5,7 @@ import GoalsColumn from './components/GoalsColumn';
 import { BookOpen, MessageSquare, CheckCircle2 } from 'lucide-react';
 import ScheduleSection from './components/ScheduleSection';
 import NoteModal from './components/NoteModal';
+import LockCriteriaModal from './components/LockCriteriaModal';
 import ChatColumn from './components/ChatColumn';
 import TaskPlannerChat from './components/TaskPlannerChat';
 import ReadingList from './components/ReadingList';
@@ -31,6 +32,9 @@ const App = () => {
   const [activeNoteModal, setActiveNoteModal] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [activeTab, setActiveTab] = useState('todos');
+  const [validationState, setValidationState] = useState('idle');
+  const [validationError, setValidationError] = useState('');
+  const [lockEditModal, setLockEditModal] = useState(null);
 
   const fetchWeeklyHistory = async () => {
     try {
@@ -61,13 +65,6 @@ const App = () => {
     yesterday.setDate(yesterday.getDate() - 1);
     return `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
   };
-
-  useEffect(() => {
-    if (user) {
-      loadData();
-      fetchWeeklyHistory();
-    }
-  }, [user, loadData]);
 
   const loadData = useCallback(async () => {
     try {
@@ -108,6 +105,13 @@ const App = () => {
       console.error('Error loading data:', error);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadData();
+      fetchWeeklyHistory();
+    }
+  }, [user, loadData]);
 
   // Date rollover check
   useEffect(() => {
@@ -178,8 +182,68 @@ const App = () => {
       }
       setActiveNoteModal(null);
       setNoteText('');
+      setValidationState('idle');
+      setValidationError('');
     } catch (error) {
       console.error('Error saving note:', error);
+    }
+  };
+
+  const handleValidateAndComplete = async () => {
+    const task = activeNoteModal;
+
+    if (!task.isLocked) {
+      await handleSaveNote();
+      return;
+    }
+
+    setValidationState('validating');
+    setValidationError('');
+
+    try {
+      const result = await api.validateLockCriteria(task.unlockCriteria, noteText);
+
+      if (result.data.isValid) {
+        setValidationState('valid');
+        await handleSaveNote();
+      } else {
+        setValidationState('invalid');
+        setValidationError(result.data.explanation);
+      }
+    } catch (error) {
+      if (error.response?.data?.allowOverride) {
+        setValidationState('error');
+      } else {
+        setValidationError('Validation failed. Please try again.');
+        setValidationState('invalid');
+      }
+    }
+  };
+
+  const handleOverrideComplete = async () => {
+    setValidationState('idle');
+    await handleSaveNote();
+  };
+
+  const handleToggleLock = (taskId) => {
+    const task = dailyTasks.find(t => t._id === taskId);
+    if (task) {
+      setLockEditModal({ taskId, task });
+    }
+  };
+
+  const handleSaveLockCriteria = async (criteria) => {
+    try {
+      const task = dailyTasks.find(t => t._id === lockEditModal.taskId);
+      const updated = await api.updateTask(lockEditModal.taskId, {
+        ...task,
+        isLocked: true,
+        unlockCriteria: criteria
+      });
+      setDailyTasks(dailyTasks.map(t => t._id === lockEditModal.taskId ? updated.data : t));
+      setLockEditModal(null);
+    } catch (error) {
+      console.error('Error saving lock criteria:', error);
     }
   };
 
@@ -562,6 +626,7 @@ const App = () => {
                   onAddEverydayTask={handleAddEverydayTask}
                   onEditEverydayTask={handleEditEverydayTask}
                   onDeleteEverydayTask={handleDeleteEverydayTask}
+                  onToggleLock={handleToggleLock}
                   currentDate={getTodayKey()}
                   scheduleSection={
                     <ScheduleSection
@@ -625,7 +690,23 @@ const App = () => {
             onCancel={() => {
               setActiveNoteModal(null);
               setNoteText('');
+              setValidationState('idle');
+              setValidationError('');
             }}
+            isLocked={activeNoteModal.isLocked}
+            unlockCriteria={activeNoteModal.unlockCriteria}
+            validationState={validationState}
+            validationError={validationError}
+            onValidate={handleValidateAndComplete}
+            onOverride={handleOverrideComplete}
+          />
+        )}
+
+        {lockEditModal && (
+          <LockCriteriaModal
+            task={lockEditModal.task}
+            onSave={handleSaveLockCriteria}
+            onCancel={() => setLockEditModal(null)}
           />
         )}
       </div>

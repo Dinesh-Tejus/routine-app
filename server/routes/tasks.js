@@ -3,6 +3,10 @@ const router = express.Router();
 const DailyTask = require('../models/DailyTask');
 const auth = require('../middleware/auth');
 const { getAdjustedDate, getAdjustedYesterday, getStartOfWeek } = require('../utils/dateUtils');
+const { GoogleGenAI } = require("@google/genai");
+
+// Initialize Gemini AI for lock validation
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // Apply auth middleware to all task routes
 router.use(auth);
@@ -86,13 +90,62 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update task
+// Validate lock criteria using LLM
+router.post('/validate-lock', async (req, res) => {
+  try {
+    const { criteria, notes } = req.body;
+    if (!criteria || !notes) {
+      return res.status(400).json({ error: 'Criteria and notes required' });
+    }
+
+    const prompt = `You are a task completion validator.
+
+UNLOCK CRITERIA set by user:
+"${criteria}"
+
+USER'S COMPLETION NOTES:
+"${notes}"
+
+Determine if the user's notes satisfy the unlock criteria.
+
+Respond with JSON:
+{
+  "isValid": true/false,
+  "explanation": "Brief explanation of why criteria is/isn't met"
+}
+
+Be reasonable - if the user's notes reasonably demonstrate they met the criteria, approve it.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-flash-lite-latest",
+      contents: prompt
+    });
+
+    const responseText = response.text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    const result = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+
+    res.json(result);
+  } catch (error) {
+    console.error('Lock validation error:', error);
+    res.status(503).json({
+      error: 'Validation service unavailable',
+      allowOverride: true
+    });
+  }
+});
+
 // Update task
 router.put('/:id', async (req, res) => {
   try {
     const task = await DailyTask.findOne({ _id: req.params.id, userId: req.user.userId });
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
+    }
+
+    // Prevent removing lock once set
+    if (task.isLocked && req.body.isLocked === false) {
+      return res.status(400).json({ error: 'Cannot remove lock once set' });
     }
 
     const today = getAdjustedDate();

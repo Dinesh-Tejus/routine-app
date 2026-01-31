@@ -9,7 +9,9 @@ const dailyTaskSchema = new mongoose.Schema({
   date: { type: String, required: true },
   fromScheduled: { type: Boolean, default: false },
   streak: { type: Number, default: 0 },
-  lastCompletedDate: { type: String, default: null }
+  lastCompletedDate: { type: String, default: null },
+  isLocked: { type: Boolean, default: false },
+  unlockCriteria: { type: String, default: '' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('DailyTask', dailyTaskSchema);

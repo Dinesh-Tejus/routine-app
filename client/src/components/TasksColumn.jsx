@@ -1,6 +1,6 @@
 // client/src/components/TasksColumn.jsx
 import React, { useState } from 'react';
-import { Check, Plus, X, Edit2, Save, Settings, Flame } from 'lucide-react';
+import { Check, Plus, X, Edit2, Save, Settings, Flame, Lock, Unlock } from 'lucide-react';
 
 const TasksColumn = ({
   dailyTasks,
@@ -11,6 +11,7 @@ const TasksColumn = ({
   onAddEverydayTask,
   onEditEverydayTask,
   onDeleteEverydayTask,
+  onToggleLock,
   scheduleSection,
   currentDate
 }) => {
@@ -127,6 +128,9 @@ const TasksColumn = ({
                     <p className={`text-sm leading-tight ${task.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
                       {task.text}
                     </p>
+                    {task.isLocked && (
+                      <Lock size={12} className="text-amber-400 flex-shrink-0" title={`Locked: ${task.unlockCriteria}`} />
+                    )}
                     {task.isEveryday && (
                       <div className="flex items-center gap-1.5">
                         <span className="text-[9px] px-1 py-px bg-slate-800 text-slate-500 rounded border border-slate-700/50 uppercase tracking-tighter">
@@ -170,14 +174,24 @@ const TasksColumn = ({
                     </button>
                   </>
                 ) : (
-                  !task.isEveryday && (
+                  <>
+                    {/* Lock toggle button */}
                     <button
-                      onClick={() => onDeleteTask(task._id)}
-                      className="text-slate-500 hover:text-red-400 transition-all"
+                      onClick={() => onToggleLock(task._id)}
+                      className="text-slate-500 hover:text-amber-400 transition-all"
+                      title={task.isLocked ? "Edit lock criteria" : "Add lock"}
                     >
-                      <X size={12} />
+                      {task.isLocked ? <Lock size={12} /> : <Unlock size={12} />}
                     </button>
-                  )
+                    {!task.isEveryday && (
+                      <button
+                        onClick={() => onDeleteTask(task._id)}
+                        className="text-slate-500 hover:text-red-400 transition-all"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
