@@ -26,6 +26,7 @@ app.use('/api/logs', require('./routes/logs'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/reflection', require('./routes/reflection'));
 app.use('/api/planner', require('./routes/planner'));
+app.use('/api/research', require('./routes/research'));
 
 // Global error handler
 app.use((err, req, res, next) => {

@@ -9,6 +9,8 @@ import LockCriteriaModal from './components/LockCriteriaModal';
 import ChatColumn from './components/ChatColumn';
 import TaskPlannerChat from './components/TaskPlannerChat';
 import ReadingList from './components/ReadingList';
+import NewsDigest from './components/NewsDigest';
+import LearningPath from './components/LearningPath';
 import Login from './components/Login';
 import { useAuth } from './contexts/AuthContext';
 import { api } from './services/api';
@@ -652,19 +654,28 @@ const App = () => {
           )}
 
           {activeTab === 'reading' && (
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="xl:col-span-8">
-                <ChatColumn
-                  onSearch={handleSearchArticles}
-                  onAddArticle={handleAddArticleToReadingTask}
-                  initialMessages={dailyLog.searchHistory?.map(h => [
-                    { type: 'user', text: h.query },
-                    { type: 'bot', ...h.result }
-                  ]).flat() || []}
-                />
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              {/* Top row: Article Search and Reading List */}
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+                <div className="xl:col-span-8">
+                  <ChatColumn
+                    onSearch={handleSearchArticles}
+                    onAddArticle={handleAddArticleToReadingTask}
+                    initialMessages={dailyLog.searchHistory?.map(h => [
+                      { type: 'user', text: h.query },
+                      { type: 'bot', ...h.result }
+                    ]).flat() || []}
+                  />
+                </div>
+                <div className="xl:col-span-4">
+                  <ReadingList notes={getReadingNotes()} />
+                </div>
               </div>
-              <div className="xl:col-span-4">
-                <ReadingList notes={getReadingNotes()} />
+
+              {/* Bottom row: News Digest and Learning Path */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                <NewsDigest onAddArticle={handleAddArticleToReadingTask} />
+                <LearningPath onAddArticle={handleAddArticleToReadingTask} />
               </div>
             </div>
           )}

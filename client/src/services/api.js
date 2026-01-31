@@ -34,4 +34,22 @@ export const api = {
   parseTasks: (text) => axios.post(`${API_BASE_URL}/planner/parse`, { text }),
   getWeeklyHistory: () => axios.get(`${API_BASE_URL}/tasks/history/weekly`),
   validateLockCriteria: (criteria, notes) => axios.post(`${API_BASE_URL}/tasks/validate-lock`, { criteria, notes }),
+
+  // News Digest & QNA
+  getNewsDigest: (topics) => axios.post(`${API_BASE_URL}/chat/news-digest`, { topics }),
+  askQuestion: (question) => axios.post(`${API_BASE_URL}/chat/qna`, { question }),
+  extractContent: (urls) => axios.post(`${API_BASE_URL}/chat/extract`, { urls }),
+
+  // Research & Learning Paths
+  generateLearningPath: (topic, depth = 'basic') => axios.post(`${API_BASE_URL}/research/learning-path`, { topic, depth }),
+  mapSite: (url, maxDepth, limit) => axios.post(`${API_BASE_URL}/research/map-site`, { url, maxDepth, limit }),
+  crawlSite: (url, options) => axios.post(`${API_BASE_URL}/research/crawl`, { url, ...options }),
+  searchDomain: (query, domains, maxResults) => axios.post(`${API_BASE_URL}/research/search-domain`, { query, domains, maxResults }),
+
+  // Research Data Persistence
+  getResearchData: () => axios.get(`${API_BASE_URL}/research/data`),
+  saveLearningPath: (learningPath, completedItems) => axios.post(`${API_BASE_URL}/research/save-learning-path`, { learningPath, completedItems }),
+  updateLearningProgress: (completedItems) => axios.post(`${API_BASE_URL}/research/update-learning-progress`, { completedItems }),
+  clearLearningPath: () => axios.post(`${API_BASE_URL}/research/clear-learning-path`),
+  saveWeeklyDigest: (digest) => axios.post(`${API_BASE_URL}/research/save-weekly-digest`, { digest }),
 };
