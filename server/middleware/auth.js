@@ -11,7 +11,11 @@ const authMiddleware = (req, res, next) => {
         }
 
         // Verify token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-this');
+        if (!process.env.JWT_SECRET) {
+            console.error('FATAL: JWT_SECRET environment variable is not set');
+            process.exit(1);
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
         // Add user info to request
         req.user = {

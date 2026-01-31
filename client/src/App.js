@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import TasksColumn from './components/TasksColumn';
 import ReflectionChat from './components/ReflectionChat';
 import GoalsColumn from './components/GoalsColumn';
@@ -67,10 +67,9 @@ const App = () => {
       loadData();
       fetchWeeklyHistory();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, loadData]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const todayKey = getTodayKey();
       const yesterdayKey = getYesterdayKey();
@@ -108,7 +107,7 @@ const App = () => {
     } catch (error) {
       console.error('Error loading data:', error);
     }
-  };
+  }, [user]);
 
   // Date rollover check
   useEffect(() => {
@@ -400,7 +399,8 @@ const App = () => {
         const lines = updatedData.tomorrowNotes
           .split(/[\n,]+/)
           .map(l => l.replace(/^[-*•]\s*/, '').trim())
-          .filter(l => l.length > 1); // Avoid single chars
+          .filter(l => l.length > 1) // Avoid single chars
+          .filter(l => !['none', 'n/a', 'nothing', 'no tasks', ''].includes(l.toLowerCase()));
 
         const tomorrow = new Date(getAdjustedNow());
         tomorrow.setDate(tomorrow.getDate() + 1);

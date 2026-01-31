@@ -26,14 +26,11 @@ router.get('/', async (req, res) => {
       if (task.isEveryday) {
         let changed = false;
 
-        if (task.streak > 0 && (!task.lastCompletedDate || task.lastCompletedDate < yesterday)) {
-
-          if (task.lastCompletedDate !== today && task.lastCompletedDate !== yesterday) {
-            task.streak = 0;
-            changed = true;
-          }
+        // Reset streak if last completed before yesterday
+        if (task.streak > 0 && task.lastCompletedDate && task.lastCompletedDate < yesterday) {
+          task.streak = 0;
+          changed = true;
         }
-
 
         if (task.completed && task.lastCompletedDate !== today) {
           task.completed = false;
@@ -71,6 +68,11 @@ router.get('/history/weekly', async (req, res) => {
 // Create new task
 router.post('/', async (req, res) => {
   try {
+    const { text } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: 'Task text is required' });
+    }
+
     const today = getAdjustedDate();
     const task = new DailyTask({
       ...req.body,

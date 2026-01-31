@@ -30,9 +30,10 @@ const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
             };
             setMessages(prev => [...prev, botMessage]);
         } catch (error) {
+            console.error('Article search error:', error);
             const errorMessage = {
                 type: 'error',
-                text: 'Failed to fetch articles. Please try again.'
+                text: 'Failed to fetch articles. Check your Tavily API key configuration.'
             };
             setMessages(prev => [...prev, errorMessage]);
         } finally {

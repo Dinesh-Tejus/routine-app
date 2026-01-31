@@ -65,8 +65,7 @@ Organized and Merged Reflection:`;
             parsedResponse = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
         } catch (parseError) {
             console.error('Error parsing Gemini response:', parseError);
-
-
+            return res.status(500).json({ error: 'Failed to parse reflection data' });
         }
 
         res.json(parsedResponse);

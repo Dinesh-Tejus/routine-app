@@ -16,6 +16,11 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
+    const { text } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: 'Goal text is required' });
+    }
+
     const goal = new WeeklyGoal({
       ...req.body,
       userId: req.user.userId
