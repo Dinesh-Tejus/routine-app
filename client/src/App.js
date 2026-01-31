@@ -72,12 +72,15 @@ const App = () => {
 
   const loadData = async () => {
     try {
+      const todayKey = getTodayKey();
+      const yesterdayKey = getYesterdayKey();
+
       const [tasksRes, goalsRes, scheduledRes, todayLogRes, yesterdayLogRes] = await Promise.all([
         api.getTasks(),
         api.getGoals(),
         api.getScheduled(),
-        api.getLog(getTodayKey()),
-        api.getLog(getYesterdayKey())
+        api.getLog(todayKey),
+        api.getLog(yesterdayKey)
       ]);
 
       setDailyTasks(tasksRes.data);
@@ -88,13 +91,13 @@ const App = () => {
       setScheduledTasks(updatedScheduled);
       setDailyTasks(updatedDaily);
 
-      const todayKey = getTodayKey();
       setDailyLog({
         workedOn: '',
         finished: '',
         feedback: '',
         tomorrowNotes: '',
         chatHistory: [],
+        searchHistory: [],
         ...todayLogRes.data,
         date: todayKey
       });
@@ -106,6 +109,26 @@ const App = () => {
       console.error('Error loading data:', error);
     }
   };
+
+  // Date rollover check
+  useEffect(() => {
+    const checkDate = () => {
+      const currentToday = getTodayKey();
+      if (dailyLog.date && dailyLog.date !== currentToday) {
+        console.log('Date changed (rollover), reloading data...');
+        loadData();
+      }
+    };
+
+    // Check on window focus and occasionally
+    window.addEventListener('focus', checkDate);
+    const interval = setInterval(checkDate, 300000); // 5 minutes
+
+    return () => {
+      window.removeEventListener('focus', checkDate);
+      clearInterval(interval);
+    };
+  }, [dailyLog.date, loadData]);
 
   const handleToggleTaskComplete = async (id) => {
     const task = dailyTasks.find(t => t._id === id);
@@ -364,7 +387,7 @@ const App = () => {
         date: getTodayKey()
       };
 
-      const res = await api.saveDailyLog(logToSave);
+      const res = await api.saveLog(logToSave);
       setDailyLog(res.data);
 
       if (updatedData.finished) {
@@ -373,22 +396,26 @@ const App = () => {
 
       // Auto-schedule tomorrow's tasks if notes were updated
       if (updatedData.tomorrowNotes && updatedData.tomorrowNotes !== dailyLog.tomorrowNotes) {
+        // Handle both comma-separated and line-separated tasks
         const lines = updatedData.tomorrowNotes
-          .split('\n')
+          .split(/[\n,]+/)
           .map(l => l.replace(/^[-*•]\s*/, '').trim())
-          .filter(l => l.length > 0);
+          .filter(l => l.length > 1); // Avoid single chars
 
         const tomorrow = new Date(getAdjustedNow());
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(12, 0, 0, 0); // Noon tomorrow
 
         for (const line of lines) {
+          // Case-insensitive check and avoid duplicates
+          const lowerLine = line.toLowerCase();
           const exists = (scheduledTasks || []).some(t =>
-            t.text === line &&
+            t.text.toLowerCase() === lowerLine &&
             new Date(t.date).toDateString() === tomorrow.toDateString()
           );
 
           if (!exists) {
+            console.log('Auto-scheduling tomorrow task:', line);
             await handleAddScheduled(line, tomorrow.toISOString());
           }
         }

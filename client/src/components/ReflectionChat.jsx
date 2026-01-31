@@ -17,13 +17,17 @@ const ReflectionChat = ({ dailyLog, onUpdateLog, completedTasks = [], weeklyWins
     }, [messages, isProcessing]);
 
     useEffect(() => {
+        // Clear messages if date changed to prevent leakage
+        setMessages([]);
+
         // Load existing chat history if available
         if (dailyLog.chatHistory && dailyLog.chatHistory.length > 0) {
             setMessages(dailyLog.chatHistory);
         } else {
-            // Check if there's organized data but no message history
-            const hasExistingData = Object.values(dailyLog).some(val =>
-                typeof val === 'string' && val.trim() && val !== dailyLog.chatHistory
+            // Check if there's organized data (excluding technical fields)
+            const sectionKeys = ['workedOn', 'finished', 'feedback', 'tomorrowNotes'];
+            const hasExistingData = sectionKeys.some(key =>
+                dailyLog[key] && typeof dailyLog[key] === 'string' && dailyLog[key].trim()
             );
 
             if (!hasExistingData) {
