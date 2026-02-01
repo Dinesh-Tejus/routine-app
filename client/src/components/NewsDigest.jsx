@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Newspaper, Loader2, ExternalLink, RefreshCw, Plus, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -10,6 +10,8 @@ const NewsDigest = ({ onAddArticle }) => {
     const [addedArticles, setAddedArticles] = useState(new Set());
     const [expandedTopics, setExpandedTopics] = useState(new Set());
     const [customTopics, setCustomTopics] = useState('');
+    const [animatingButtons, setAnimatingButtons] = useState(new Set());
+    const clickTimers = useRef({});
 
     const defaultTopics = ['AI agents', 'LLMs', 'RAG'];
 
@@ -59,14 +61,44 @@ const NewsDigest = ({ onAddArticle }) => {
         }
     };
 
-    const handleAddClick = async (article) => {
+    const handleAddClick = async (article, status = 'read') => {
         if (addedArticles.has(article.url)) return;
 
         try {
-            await onAddArticle(article);
-            setAddedArticles(prev => new Set([...prev, article.url]));
+            const result = await onAddArticle(article, status);
+            if (result?.success !== false) {
+                // Trigger animation
+                setAnimatingButtons(prev => new Set([...prev, article.url]));
+                setTimeout(() => {
+                    setAnimatingButtons(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(article.url);
+                        return newSet;
+                    });
+                }, 600);
+                setAddedArticles(prev => new Set([...prev, article.url]));
+            }
         } catch (error) {
             console.error('Failed to add article:', error);
+        }
+    };
+
+    const handleButtonClick = (article, e) => {
+        if (addedArticles.has(article.url)) return;
+
+        const articleKey = article.url;
+
+        // If there's already a pending single click, this is a double click
+        if (clickTimers.current[articleKey]) {
+            clearTimeout(clickTimers.current[articleKey]);
+            delete clickTimers.current[articleKey];
+            handleAddClick(article, 'saved');
+        } else {
+            // Set up single click timer
+            clickTimers.current[articleKey] = setTimeout(() => {
+                delete clickTimers.current[articleKey];
+                handleAddClick(article, 'read');
+            }, 300);
         }
     };
 
@@ -261,15 +293,22 @@ const NewsDigest = ({ onAddArticle }) => {
                                                         <ExternalLink size={12} className="text-slate-500 group-hover:text-blue-400 flex-shrink-0 mt-0.5" />
                                                     </a>
                                                     <button
-                                                        onClick={() => handleAddClick(article)}
+                                                        onClick={(e) => handleButtonClick(article, e)}
                                                         disabled={addedArticles.has(article.url)}
-                                                        className={`px-2.5 flex items-center justify-center transition-all ${addedArticles.has(article.url)
-                                                            ? 'text-blue-500 bg-blue-500/5 cursor-default'
-                                                            : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'
-                                                            }`}
-                                                        title={addedArticles.has(article.url) ? "Added to reading task" : "Add to Reading Task"}
+                                                        className={`px-2.5 flex items-center justify-center transition-all ${
+                                                            animatingButtons.has(article.url)
+                                                                ? 'text-blue-400 bg-blue-500/20 animate-pulse scale-110'
+                                                                : addedArticles.has(article.url)
+                                                                ? 'text-blue-500 bg-blue-500/5 cursor-default'
+                                                                : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'
+                                                        }`}
+                                                        title={addedArticles.has(article.url) ? "Added to reading list" : "Click: Read | Double-click: Save for Later"}
                                                     >
-                                                        {addedArticles.has(article.url) ? <Check size={14} /> : <Plus size={14} />}
+                                                        {addedArticles.has(article.url) ? (
+                                                            <Check size={14} className={animatingButtons.has(article.url) ? 'animate-bounce' : ''} />
+                                                        ) : (
+                                                            <Plus size={14} />
+                                                        )}
                                                     </button>
                                                 </div>
                                             ))}

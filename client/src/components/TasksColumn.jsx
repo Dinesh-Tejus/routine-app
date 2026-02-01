@@ -50,11 +50,21 @@ const TasksColumn = ({
 
   const safeDailyTasks = dailyTasks || [];
   const completedCount = safeDailyTasks.filter(t => t.completed).length;
-  const formattedDate = new Date(currentDate).toLocaleDateString('en-US', {
+
+  // Parse date string correctly to avoid UTC/EST timezone issues
+  // Add T12:00:00 to treat it as noon local time, avoiding day boundary issues
+  const parseDate = (dateStr) => {
+    if (!dateStr) return new Date();
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day, 12, 0, 0);
+  };
+
+  const formattedDate = parseDate(currentDate).toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
+    timeZone: 'America/New_York'
   });
 
   // Sort tasks: Everyday tasks first, then today's tasks

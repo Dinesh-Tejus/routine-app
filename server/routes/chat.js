@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const tavilyService = require('../services/tavily');
 const ResearchData = require('../models/ResearchData');
+const { chat: log } = require('../utils/logger');
 
 // Helper: Get the Sunday of the current week as YYYY-MM-DD
 const getWeekStartDate = () => {
@@ -19,12 +20,12 @@ router.use(auth);
 router.post('/search', async (req, res) => {
     try {
         const { query } = req.body;
+        log.info('Article search', { userId: req.user.userId, query });
 
         if (!query || !query.trim()) {
+            log.warn('Article search failed - missing query', { userId: req.user.userId });
             return res.status(400).json({ error: 'Query is required' });
         }
-
-        console.log('Searching Tavily for:', query);
 
         const enhancedQuery = `${query}. Give me most recent articles or papers that helps an AI engineer or researcher to build production grade AI applications`;
 
@@ -35,12 +36,16 @@ router.post('/search', async (req, res) => {
 
         const result = tavilyService.formatSearchResults(data);
 
-        console.log('Tavily response:', JSON.stringify(result, null, 2));
+        log.success('Article search complete', {
+            userId: req.user.userId,
+            query,
+            resultCount: result.articles?.length || 0
+        });
 
         res.json(result);
 
     } catch (error) {
-        console.error('Chat search error:', error.message);
+        log.failure('Article search', error, { userId: req.user.userId, query: req.body?.query });
         if (error.message.includes('API key')) {
             return res.status(500).json({ error: error.message });
         }
@@ -52,8 +57,7 @@ router.post('/search', async (req, res) => {
 router.post('/news-digest', async (req, res) => {
     try {
         const { topics = ['AI agents', 'LLMs', 'RAG'] } = req.body;
-
-        console.log('Generating news digest for topics:', topics);
+        log.info('Generating news digest', { userId: req.user.userId, topics });
 
         const results = await Promise.all(
             topics.map(async (topic) => {
@@ -68,6 +72,7 @@ router.post('/news-digest', async (req, res) => {
                             searchDepth: 'advanced'
                         }
                     );
+                    log.debug('Topic fetched', { topic, articleCount: data.results?.length || 0 });
                     return {
                         topic,
                         success: true,
@@ -81,7 +86,7 @@ router.post('/news-digest', async (req, res) => {
                         }))
                     };
                 } catch (topicError) {
-                    console.error(`Error fetching news for ${topic}:`, topicError.message);
+                    log.warn('Failed to fetch news for topic', { topic, error: topicError.message });
                     return {
                         topic,
                         success: false,
@@ -114,10 +119,15 @@ router.post('/news-digest', async (req, res) => {
             { upsert: true }
         );
 
+        log.success('News digest generated', {
+            userId,
+            topicCount: topics.length,
+            successCount: results.filter(r => r.success).length
+        });
         res.json(digest);
 
     } catch (error) {
-        console.error('News digest error:', error.message);
+        log.failure('Generate news digest', error, { userId: req.user.userId });
         if (error.message.includes('API key')) {
             return res.status(500).json({ error: error.message });
         }
@@ -129,15 +139,16 @@ router.post('/news-digest', async (req, res) => {
 router.post('/qna', async (req, res) => {
     try {
         const { question } = req.body;
+        log.info('QNA query', { userId: req.user.userId, questionLength: question?.length });
 
         if (!question || !question.trim()) {
+            log.warn('QNA failed - missing question', { userId: req.user.userId });
             return res.status(400).json({ error: 'Question is required' });
         }
 
-        console.log('QNA query:', question);
-
         const result = await tavilyService.qna(question);
 
+        log.success('QNA answered', { userId: req.user.userId, sourceCount: result.sources?.length || 0 });
         res.json({
             question,
             answer: result.answer,
@@ -145,7 +156,7 @@ router.post('/qna', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('QNA error:', error.message);
+        log.failure('QNA query', error, { userId: req.user.userId });
         if (error.message.includes('API key')) {
             return res.status(500).json({ error: error.message });
         }
@@ -157,14 +168,19 @@ router.post('/qna', async (req, res) => {
 router.post('/extract', async (req, res) => {
     try {
         const { urls } = req.body;
+        log.info('Content extraction', { userId: req.user.userId, urlCount: urls?.length || 0 });
 
         if (!urls || (Array.isArray(urls) && urls.length === 0)) {
+            log.warn('Extract failed - missing URLs', { userId: req.user.userId });
             return res.status(400).json({ error: 'URLs are required' });
         }
 
-        console.log('Extracting content from:', urls);
-
         const data = await tavilyService.extract(urls);
+
+        log.success('Content extracted', {
+            userId: req.user.userId,
+            extractedCount: data.results?.length || 0
+        });
 
         res.json({
             results: (data.results || []).map(r => ({
@@ -176,7 +192,7 @@ router.post('/extract', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Extract error:', error.message);
+        log.failure('Content extraction', error, { userId: req.user.userId });
         if (error.message.includes('API key')) {
             return res.status(500).json({ error: error.message });
         }

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Send, Loader2, ExternalLink, BookOpen, Plus, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Loader2, ExternalLink, BookOpen, Plus, Check, Bookmark } from 'lucide-react';
 
 const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
     const [query, setQuery] = useState('');
     const [messages, setMessages] = useState(initialMessages);
     const [loading, setLoading] = useState(false);
     const [addedArticles, setAddedArticles] = useState(new Set());
+    const [animatingButtons, setAnimatingButtons] = useState(new Set());
+    const clickTimers = useRef({});
 
     useEffect(() => {
         if (initialMessages.length > messages.length) {
@@ -41,14 +43,44 @@ const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
         }
     };
 
-    const handleAddClick = async (article) => {
+    const handleAddClick = async (article, status = 'read') => {
         if (addedArticles.has(article.url)) return;
 
         try {
-            await onAddArticle(article);
-            setAddedArticles(prev => new Set([...prev, article.url]));
+            const result = await onAddArticle(article, status);
+            if (result?.success !== false) {
+                // Trigger animation
+                setAnimatingButtons(prev => new Set([...prev, article.url]));
+                setTimeout(() => {
+                    setAnimatingButtons(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(article.url);
+                        return newSet;
+                    });
+                }, 600);
+                setAddedArticles(prev => new Set([...prev, article.url]));
+            }
         } catch (error) {
             // Error already handled in Parent
+        }
+    };
+
+    const handleButtonClick = (article, e) => {
+        if (addedArticles.has(article.url)) return;
+
+        const articleKey = article.url;
+
+        // If there's already a pending single click, this is a double click
+        if (clickTimers.current[articleKey]) {
+            clearTimeout(clickTimers.current[articleKey]);
+            delete clickTimers.current[articleKey];
+            handleAddClick(article, 'saved');
+        } else {
+            // Set up single click timer
+            clickTimers.current[articleKey] = setTimeout(() => {
+                delete clickTimers.current[articleKey];
+                handleAddClick(article, 'read');
+            }, 300);
         }
     };
 
@@ -113,15 +145,22 @@ const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
                                                         <ExternalLink size={14} className="text-slate-500 group-hover:text-emerald-400 flex-shrink-0 mt-0.5" />
                                                     </a>
                                                     <button
-                                                        onClick={() => handleAddClick(article)}
+                                                        onClick={(e) => handleButtonClick(article, e)}
                                                         disabled={addedArticles.has(article.url)}
-                                                        className={`px-3 flex items-center justify-center transition-all ${addedArticles.has(article.url)
-                                                            ? 'text-emerald-500 bg-emerald-500/5 cursor-default'
-                                                            : 'text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10'
-                                                            }`}
-                                                        title={addedArticles.has(article.url) ? "Added to reading task" : "Add to Reading Task"}
+                                                        className={`px-3 flex items-center justify-center transition-all ${
+                                                            animatingButtons.has(article.url)
+                                                                ? 'text-emerald-400 bg-emerald-500/20 animate-pulse scale-110'
+                                                                : addedArticles.has(article.url)
+                                                                ? 'text-emerald-500 bg-emerald-500/5 cursor-default'
+                                                                : 'text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10'
+                                                        }`}
+                                                        title={addedArticles.has(article.url) ? "Added to reading list" : "Click: Read | Double-click: Save for Later"}
                                                     >
-                                                        {addedArticles.has(article.url) ? <Check size={16} /> : <Plus size={16} />}
+                                                        {addedArticles.has(article.url) ? (
+                                                            <Check size={16} className={animatingButtons.has(article.url) ? 'animate-bounce' : ''} />
+                                                        ) : (
+                                                            <Plus size={16} />
+                                                        )}
                                                     </button>
                                                 </div>
                                             ))

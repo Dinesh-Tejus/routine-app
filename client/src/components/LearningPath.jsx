@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GraduationCap, Loader2, ExternalLink, Plus, Check, ChevronDown, ChevronUp, BookOpen, Globe, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -12,6 +12,8 @@ const LearningPath = ({ onAddArticle }) => {
     const [addedArticles, setAddedArticles] = useState(new Set());
     const [expandedSources, setExpandedSources] = useState(new Set());
     const [completedItems, setCompletedItems] = useState(new Set());
+    const [animatingButtons, setAnimatingButtons] = useState(new Set());
+    const clickTimers = useRef({});
 
     // Load persisted learning path on mount
     useEffect(() => {
@@ -83,7 +85,7 @@ const LearningPath = ({ onAddArticle }) => {
         }
     };
 
-    const handleAddClick = async (item) => {
+    const handleAddClick = async (item, status = 'read') => {
         const article = {
             title: item.title,
             url: item.url,
@@ -93,10 +95,40 @@ const LearningPath = ({ onAddArticle }) => {
         if (addedArticles.has(article.url)) return;
 
         try {
-            await onAddArticle(article);
-            setAddedArticles(prev => new Set([...prev, article.url]));
+            const result = await onAddArticle(article, status);
+            if (result?.success !== false) {
+                // Trigger animation
+                setAnimatingButtons(prev => new Set([...prev, article.url]));
+                setTimeout(() => {
+                    setAnimatingButtons(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(article.url);
+                        return newSet;
+                    });
+                }, 600);
+                setAddedArticles(prev => new Set([...prev, article.url]));
+            }
         } catch (error) {
             console.error('Failed to add article:', error);
+        }
+    };
+
+    const handleButtonClick = (item, e) => {
+        if (addedArticles.has(item.url)) return;
+
+        const articleKey = item.url;
+
+        // If there's already a pending single click, this is a double click
+        if (clickTimers.current[articleKey]) {
+            clearTimeout(clickTimers.current[articleKey]);
+            delete clickTimers.current[articleKey];
+            handleAddClick(item, 'saved');
+        } else {
+            // Set up single click timer
+            clickTimers.current[articleKey] = setTimeout(() => {
+                delete clickTimers.current[articleKey];
+                handleAddClick(item, 'read');
+            }, 300);
         }
     };
 
@@ -182,7 +214,7 @@ const LearningPath = ({ onAddArticle }) => {
                             value={topic}
                             onChange={(e) => setTopic(e.target.value)}
                             onKeyPress={(e) => e.key === 'Enter' && generatePath()}
-                            placeholder="Enter a topic (e.g., RAG, LangChain agents)"
+                            placeholder="e.g., RAG pipelines, fine-tuning LLMs, vector databases..."
                             className="w-full px-3 py-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 text-white placeholder-slate-500"
                         />
 
@@ -337,10 +369,22 @@ const LearningPath = ({ onAddArticle }) => {
                                     >
                                         <span className="text-xs font-bold text-purple-400 mt-0.5">{item.order}.</span>
                                         <div className="flex-1 min-w-0">
-                                            <h4 className={`text-sm font-medium group-hover:text-purple-400 transition-colors truncate ${completedItems.has(item.url) ? 'text-slate-400 line-through' : 'text-purple-300'
-                                                }`}>
-                                                {item.title}
-                                            </h4>
+                                            <div className="flex items-center gap-2">
+                                                <h4 className={`text-sm font-medium group-hover:text-purple-400 transition-colors truncate ${completedItems.has(item.url) ? 'text-slate-400 line-through' : 'text-purple-300'
+                                                    }`}>
+                                                    {item.title}
+                                                </h4>
+                                                {item.level && (
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${
+                                                        item.level === 'beginner' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                                                        item.level === 'intermediate' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                                                        item.level === 'advanced' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                                                        'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                                                    }`}>
+                                                        {item.level}
+                                                    </span>
+                                                )}
+                                            </div>
                                             {item.reason && (
                                                 <p className="text-xs text-slate-400 mt-1 line-clamp-2">{item.reason}</p>
                                             )}
@@ -349,15 +393,22 @@ const LearningPath = ({ onAddArticle }) => {
                                     </a>
 
                                     <button
-                                        onClick={() => handleAddClick(item)}
+                                        onClick={(e) => handleButtonClick(item, e)}
                                         disabled={addedArticles.has(item.url)}
-                                        className={`px-2.5 flex items-center justify-center transition-all ${addedArticles.has(item.url)
-                                            ? 'text-purple-500 bg-purple-500/5 cursor-default'
-                                            : 'text-slate-500 hover:text-purple-400 hover:bg-purple-500/10'
-                                            }`}
-                                        title={addedArticles.has(item.url) ? "Added to reading task" : "Add to Reading Task"}
+                                        className={`px-2.5 flex items-center justify-center transition-all ${
+                                            animatingButtons.has(item.url)
+                                                ? 'text-purple-400 bg-purple-500/20 animate-pulse scale-110'
+                                                : addedArticles.has(item.url)
+                                                ? 'text-purple-500 bg-purple-500/5 cursor-default'
+                                                : 'text-slate-500 hover:text-purple-400 hover:bg-purple-500/10'
+                                        }`}
+                                        title={addedArticles.has(item.url) ? "Added to reading list" : "Click: Read | Double-click: Save for Later"}
                                     >
-                                        {addedArticles.has(item.url) ? <Check size={14} /> : <Plus size={14} />}
+                                        {addedArticles.has(item.url) ? (
+                                            <Check size={14} className={animatingButtons.has(item.url) ? 'animate-bounce' : ''} />
+                                        ) : (
+                                            <Plus size={14} />
+                                        )}
                                     </button>
                                 </div>
                             ))}

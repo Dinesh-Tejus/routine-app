@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
+const { server: log } = require('./utils/logger');
 
 const app = express();
 
@@ -17,6 +18,21 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const userId = req.user?.userId || 'anonymous';
+    log.info(`${req.method} ${req.originalUrl} ${res.statusCode}`, {
+      userId,
+      duration: `${duration}ms`,
+      ip: req.ip
+    });
+  });
+  next();
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/tasks', require('./routes/tasks'));
@@ -30,11 +46,19 @@ app.use('/api/research', require('./routes/research'));
 
 // Global error handler
 app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
+    log.error('Unhandled error', {
+      error: err.message,
+      stack: err.stack,
+      path: req.originalUrl,
+      method: req.method
+    });
     res.status(500).json({ error: 'Internal server error' });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  log.info(`Server started on port ${PORT}`, {
+    env: process.env.NODE_ENV || 'development',
+    logLevel: process.env.LOG_LEVEL || 'info'
+  });
 });

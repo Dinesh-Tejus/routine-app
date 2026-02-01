@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const { GoogleGenAI } = require("@google/genai");
+const { reflection: log } = require('../utils/logger');
 
 router.use(auth);
 
@@ -12,8 +13,14 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 router.post('/process', async (req, res) => {
     try {
         const { text, currentLog } = req.body;
+        log.info('Processing reflection', {
+            userId: req.user.userId,
+            inputLength: text?.length,
+            hasCurrentLog: !!currentLog
+        });
 
         if (!text || !text.trim()) {
+            log.warn('Process reflection failed - missing text', { userId: req.user.userId });
             return res.status(400).json({ error: 'Text is required' });
         }
 
@@ -33,8 +40,8 @@ NEW USER INPUT:
 INSTRUCTIONS:
 1. Extract information from the NEW USER INPUT.
 2. If the user mentions "OVERWRITE", start fresh and use ONLY the information from the NEW USER INPUT.
-3. Otherwise, APPEND the new information to the CURRENT REFLECTIONS. 
-4. Be smart about merging: 
+3. Otherwise, APPEND the new information to the CURRENT REFLECTIONS.
+4. Be smart about merging:
    - Combine related items into concise sentences or bullet points.
    - Do not repeat information already present in CURRENT REFLECTIONS.
    - Use a professional, clean tone.
@@ -54,8 +61,8 @@ Organized and Merged Reflection:`;
             model: "gemini-flash-lite-latest",
             contents: prompt
         });
-        console.log(response.text);
         const responseText = response.text;
+        log.debug('Gemini response received', { userId: req.user.userId, responseLength: responseText?.length });
 
         // Parse the JSON response from Gemini
         let parsedResponse;
@@ -64,14 +71,24 @@ Organized and Merged Reflection:`;
             const jsonMatch = responseText.match(/\{[\s\S]*\}/);
             parsedResponse = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
         } catch (parseError) {
-            console.error('Error parsing Gemini response:', parseError);
+            log.failure('Parse Gemini response', parseError, {
+                userId: req.user.userId,
+                responsePreview: responseText?.slice(0, 200)
+            });
             return res.status(500).json({ error: 'Failed to parse reflection data' });
         }
 
+        log.success('Reflection processed', {
+            userId: req.user.userId,
+            hasWorkedOn: !!parsedResponse.workedOn,
+            hasFinished: !!parsedResponse.finished,
+            hasFeedback: !!parsedResponse.feedback,
+            hasTomorrow: !!parsedResponse.tomorrowNotes
+        });
         res.json(parsedResponse);
 
     } catch (error) {
-        console.error('Reflection processing error:', error);
+        log.failure('Process reflection', error, { userId: req.user.userId });
         res.status(500).json({ error: 'Failed to process reflection', details: error.message });
     }
 });

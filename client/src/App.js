@@ -12,12 +12,15 @@ import ReadingList from './components/ReadingList';
 import NewsDigest from './components/NewsDigest';
 import LearningPath from './components/LearningPath';
 import Login from './components/Login';
+import Toast from './components/Toast';
 import { useAuth } from './contexts/AuthContext';
+import { ToastProvider, useToast } from './contexts/ToastContext';
 import { api } from './services/api';
 import { LogOut, Loader2 } from 'lucide-react';
 
-const App = () => {
+const AppContent = () => {
   const { user, loading: authLoading, logout } = useAuth();
+  const { showToast } = useToast();
   const [dailyTasks, setDailyTasks] = useState([]);
   const [weeklyGoals, setWeeklyGoals] = useState([]);
   const [scheduledTasks, setScheduledTasks] = useState([]);
@@ -47,9 +50,15 @@ const App = () => {
     }
   };
 
+  // Get current time in EST timezone
+  const getESTDate = (date = new Date()) => {
+    const estString = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+    return new Date(estString);
+  };
+
   const getAdjustedNow = () => {
-    const now = new Date();
-    // If it's before 12:30 AM, treat it as the previous day
+    const now = getESTDate();
+    // If it's before 12:30 AM EST, treat it as the previous day
     if (now.getHours() === 0 && now.getMinutes() < 30) {
       now.setDate(now.getDate() - 1);
     }
@@ -509,29 +518,81 @@ const App = () => {
     }
   };
 
-  const handleAddArticleToReadingTask = async (article) => {
+  const handleAddArticleToReadingTask = async (article, status = 'read') => {
     try {
       const targetTask = dailyTasks.find(t =>
         t.isEveryday && t.text.toLowerCase().includes('reading articles')
       );
 
       if (!targetTask) {
-        alert('Could not find an everyday task named "Reading Articles". Please create one first!');
-        return;
+        showToast('Could not find an everyday task named "Reading Articles". Please create one first!', 'error');
+        return { success: false };
       }
 
-      const articleNote = `\n- ${article.title}: ${article.url}`;
-      const newNotes = (targetTask.notes || '') + articleNote;
+      // Use new articles array if available, otherwise fall back to notes
+      if (targetTask.articles !== undefined) {
+        const updated = await api.addArticleToTask(targetTask._id, {
+          title: article.title,
+          url: article.url,
+          status
+        });
+        setDailyTasks(dailyTasks.map(t => t._id === targetTask._id ? updated.data : t));
+      } else {
+        // Legacy: append to notes
+        const articleNote = `\n- ${article.title}: ${article.url}`;
+        const newNotes = (targetTask.notes || '') + articleNote;
 
-      const updated = await api.updateTask(targetTask._id, {
-        ...targetTask,
-        notes: newNotes
-      });
+        const updated = await api.updateTask(targetTask._id, {
+          ...targetTask,
+          notes: newNotes
+        });
 
-      setDailyTasks(dailyTasks.map(t => t._id === targetTask._id ? updated.data : t));
+        setDailyTasks(dailyTasks.map(t => t._id === targetTask._id ? updated.data : t));
+      }
+
+      const statusLabel = status === 'saved' ? 'Saved for Later' : 'Reading List';
+      showToast(`Article added to ${statusLabel}`, 'success');
+      return { success: true };
     } catch (error) {
       console.error('Error adding article to task:', error);
-      alert('Failed to add article to reading task.');
+      showToast('Failed to add article to reading task.', 'error');
+      return { success: false };
+    }
+  };
+
+  const handleMoveArticle = async (articleIndex, newStatus) => {
+    try {
+      const targetTask = dailyTasks.find(t =>
+        t.isEveryday && t.text.toLowerCase().includes('reading articles')
+      );
+
+      if (!targetTask) return;
+
+      const updated = await api.updateArticleStatus(targetTask._id, articleIndex, newStatus);
+      setDailyTasks(dailyTasks.map(t => t._id === targetTask._id ? updated.data : t));
+
+      const statusLabel = newStatus === 'saved' ? 'Saved for Later' : 'Read';
+      showToast(`Article moved to ${statusLabel}`, 'success');
+    } catch (error) {
+      console.error('Error moving article:', error);
+      showToast('Failed to move article.', 'error');
+    }
+  };
+
+  const handleDeleteArticle = async (articleIndex) => {
+    try {
+      const targetTask = dailyTasks.find(t =>
+        t.isEveryday && t.text.toLowerCase().includes('reading articles')
+      );
+
+      if (!targetTask) return;
+
+      const updated = await api.deleteArticle(targetTask._id, articleIndex);
+      setDailyTasks(dailyTasks.map(t => t._id === targetTask._id ? updated.data : t));
+      showToast('Article removed', 'success');
+    } catch (error) {
+      console.error('Error deleting article:', error);
+      showToast('Failed to remove article.', 'error');
     }
   };
 
@@ -540,6 +601,13 @@ const App = () => {
       t.isEveryday && t.text.toLowerCase().includes('reading articles')
     );
     return targetTask ? targetTask.notes : '';
+  };
+
+  const getReadingArticles = () => {
+    const targetTask = (dailyTasks || []).find(t =>
+      t.isEveryday && t.text.toLowerCase().includes('reading articles')
+    );
+    return targetTask?.articles || [];
   };
 
   const getProcessedWeeklyWins = () => {
@@ -668,7 +736,12 @@ const App = () => {
                   />
                 </div>
                 <div className="xl:col-span-4">
-                  <ReadingList notes={getReadingNotes()} />
+                  <ReadingList
+                    notes={getReadingNotes()}
+                    articles={getReadingArticles()}
+                    onMoveArticle={handleMoveArticle}
+                    onDeleteArticle={handleDeleteArticle}
+                  />
                 </div>
               </div>
 
@@ -722,6 +795,15 @@ const App = () => {
         )}
       </div>
     </div>
+  );
+};
+
+const App = () => {
+  return (
+    <ToastProvider>
+      <AppContent />
+      <Toast />
+    </ToastProvider>
   );
 };
 

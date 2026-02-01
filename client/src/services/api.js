@@ -16,6 +16,11 @@ export const api = {
   updateTask: (id, task) => axios.put(`${API_BASE_URL}/tasks/${id}`, task),
   deleteTask: (id) => axios.delete(`${API_BASE_URL}/tasks/${id}`),
 
+  // Article management for reading tasks
+  addArticleToTask: (taskId, article) => axios.post(`${API_BASE_URL}/tasks/${taskId}/articles`, article),
+  updateArticleStatus: (taskId, articleIndex, status) => axios.patch(`${API_BASE_URL}/tasks/${taskId}/articles/${articleIndex}`, { status }),
+  deleteArticle: (taskId, articleIndex) => axios.delete(`${API_BASE_URL}/tasks/${taskId}/articles/${articleIndex}`),
+
   getGoals: () => axios.get(`${API_BASE_URL}/goals`),
   createGoal: (goal) => axios.post(`${API_BASE_URL}/goals`, goal),
   updateGoal: (id, goal) => axios.put(`${API_BASE_URL}/goals/${id}`, goal),

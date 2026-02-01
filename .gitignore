@@ -12,6 +12,8 @@ client/build/
 dist/
 
 # Logs
+logs/
+!logs/.gitkeep
 *.log
 *.log*
 npm-debug.log*

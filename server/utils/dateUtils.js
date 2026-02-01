@@ -1,11 +1,21 @@
 /**
+ * Gets the current time in EST timezone
+ */
+const getESTDate = (date = new Date()) => {
+    // Convert to EST timezone string, then parse back
+    const estString = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+    return new Date(estString);
+};
+
+/**
  * Gets the current date formatted as YYYY-MM-DD,
  * accounting for the 12:30 AM day reset.
+ * Uses EST timezone.
  */
 const getAdjustedDate = (date = new Date()) => {
-    const now = new Date(date);
+    const now = getESTDate(date);
 
-    // If it's before 12:30 AM, treat it as the previous day
+    // If it's before 12:30 AM EST, treat it as the previous day
     if (now.getHours() === 0 && now.getMinutes() < 30) {
         now.setDate(now.getDate() - 1);
     }
@@ -20,11 +30,12 @@ const getAdjustedDate = (date = new Date()) => {
 /**
  * Gets yesterday's date formatted as YYYY-MM-DD,
  * accounting for the 12:30 AM day reset.
+ * Uses EST timezone.
  */
 const getAdjustedYesterday = (date = new Date()) => {
-    const now = new Date(date);
+    const now = getESTDate(date);
 
-    // If it's before 12:30 AM, "today" is already shifted 
+    // If it's before 12:30 AM EST, "today" is already shifted
     // so yesterday is 2 days ago from literal now
     if (now.getHours() === 0 && now.getMinutes() < 30) {
         now.setDate(now.getDate() - 2);
@@ -41,9 +52,10 @@ const getAdjustedYesterday = (date = new Date()) => {
 
 /**
  * Gets the start of the week (Monday) based on the adjusted date.
+ * Uses EST timezone.
  */
 const getStartOfWeek = (date = new Date()) => {
-    const adjusted = new Date(date);
+    const adjusted = getESTDate(date);
     // Adjust for 12:30 AM reset
     if (adjusted.getHours() === 0 && adjusted.getMinutes() < 30) {
         adjusted.setDate(adjusted.getDate() - 1);
@@ -63,5 +75,6 @@ const getStartOfWeek = (date = new Date()) => {
 module.exports = {
     getAdjustedDate,
     getAdjustedYesterday,
-    getStartOfWeek
+    getStartOfWeek,
+    getESTDate
 };
