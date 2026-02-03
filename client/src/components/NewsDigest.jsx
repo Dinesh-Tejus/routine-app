@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Newspaper, Loader2, ExternalLink, RefreshCw, Plus, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../services/api';
+import VoiceInput from './VoiceInput';
 
 const NewsDigest = ({ onAddArticle }) => {
     const [digest, setDigest] = useState(null);
@@ -40,24 +41,33 @@ const NewsDigest = ({ onAddArticle }) => {
         loadPersistedDigest();
     }, []);
 
-    const generateDigest = async () => {
+    const generateDigest = async (voiceTopics = null) => {
         setLoading(true);
         setError(null);
 
         try {
-            const topics = customTopics.trim()
+            const topicsToUse = voiceTopics || (customTopics.trim()
                 ? customTopics.split(',').map(t => t.trim()).filter(Boolean)
-                : defaultTopics;
+                : defaultTopics);
 
-            const response = await api.getNewsDigest(topics);
+            const response = await api.getNewsDigest(topicsToUse);
             setDigest(response.data);
             // Expand all topics by default
-            setExpandedTopics(new Set(topics));
+            setExpandedTopics(new Set(topicsToUse));
         } catch (err) {
             console.error('News digest error:', err);
             setError(err.response?.data?.error || 'Failed to generate news digest');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleVoiceInput = async (text) => {
+        // Parse voice input as comma-separated topics
+        const topics = text.split(/,|and/).map(t => t.trim()).filter(Boolean);
+        if (topics.length > 0) {
+            setCustomTopics(topics.join(', '));
+            await generateDigest(topics);
         }
     };
 
@@ -181,13 +191,21 @@ const NewsDigest = ({ onAddArticle }) => {
                     </div>
 
                     <div className="w-full max-w-xs">
-                        <input
-                            type="text"
-                            value={customTopics}
-                            onChange={(e) => setCustomTopics(e.target.value)}
-                            placeholder="Custom topics (comma-separated)"
-                            className="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-slate-500 mb-2"
-                        />
+                        <div className="flex items-center gap-2 mb-2">
+                            <VoiceInput
+                                onTranscription={handleVoiceInput}
+                                disabled={loading}
+                                size={18}
+                                className="flex-shrink-0"
+                            />
+                            <input
+                                type="text"
+                                value={customTopics}
+                                onChange={(e) => setCustomTopics(e.target.value)}
+                                placeholder="Custom topics (comma-separated)"
+                                className="flex-1 px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-slate-500"
+                            />
+                        </div>
                         <p className="text-xs text-slate-500 text-center mb-3">
                             Default: {defaultTopics.join(', ')}
                         </p>

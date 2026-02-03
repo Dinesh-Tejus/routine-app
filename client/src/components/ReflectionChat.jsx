@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageCircle, Send, Loader2, Sparkles, Flame } from 'lucide-react';
 import { api } from '../services/api';
+import VoiceInput from './VoiceInput';
+import VoiceResponse from './VoiceResponse';
+import { useVoice } from '../contexts/VoiceContext';
 
 const ReflectionChat = ({ dailyLog, onUpdateLog, completedTasks = [], weeklyWins = [] }) => {
+    const { autoReadResponses } = useVoice();
     const [messages, setMessages] = useState([]);
     const [userInput, setUserInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
@@ -55,13 +59,14 @@ const ReflectionChat = ({ dailyLog, onUpdateLog, completedTasks = [], weeklyWins
         }
     }, [dailyLog.date]);
 
-    const handleSendMessage = async () => {
-        if (!userInput.trim() || isProcessing) return;
+    const handleSendMessage = async (voiceText = null) => {
+        const textToSend = voiceText || userInput;
+        if (!textToSend.trim() || isProcessing) return;
 
-        const newMessage = { type: 'user', text: userInput };
+        const newMessage = { type: 'user', text: textToSend };
         setMessages(prev => [...prev, newMessage]);
-        const userText = userInput;
-        setUserInput('');
+        const userText = textToSend;
+        if (!voiceText) setUserInput('');
         setIsProcessing(true);
 
         try {
@@ -114,6 +119,11 @@ const ReflectionChat = ({ dailyLog, onUpdateLog, completedTasks = [], weeklyWins
             e.preventDefault();
             handleSendMessage();
         }
+    };
+
+    const handleVoiceInput = async (text) => {
+        setUserInput(text);
+        await handleSendMessage(text);
     };
 
     return (
@@ -180,7 +190,15 @@ const ReflectionChat = ({ dailyLog, onUpdateLog, completedTasks = [], weeklyWins
                             {msg.type === 'bot' && (
                                 <div className="flex justify-start">
                                     <div className="bg-purple-500/10 text-purple-100 px-3 py-2 rounded-2xl rounded-tl-none max-w-[90%] text-xs border border-purple-500/20 leading-relaxed shadow-sm">
-                                        {msg.text}
+                                        <div className="flex items-start gap-2">
+                                            <span className="flex-1">{msg.text}</span>
+                                            <VoiceResponse
+                                                text={msg.text}
+                                                autoPlay={autoReadResponses && idx === messages.length - 1}
+                                                size={12}
+                                                className="flex-shrink-0"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -218,6 +236,12 @@ const ReflectionChat = ({ dailyLog, onUpdateLog, completedTasks = [], weeklyWins
 
                 {/* Input Area */}
                 <div className="flex gap-2 items-end">
+                    <VoiceInput
+                        onTranscription={handleVoiceInput}
+                        disabled={isProcessing}
+                        size={16}
+                        className="flex-shrink-0 mb-1"
+                    />
                     <textarea
                         value={userInput}
                         onChange={(e) => setUserInput(e.target.value)}
@@ -228,7 +252,7 @@ const ReflectionChat = ({ dailyLog, onUpdateLog, completedTasks = [], weeklyWins
                         disabled={isProcessing}
                     />
                     <button
-                        onClick={handleSendMessage}
+                        onClick={() => handleSendMessage()}
                         disabled={isProcessing || !userInput.trim()}
                         className="w-8 h-8 flex items-center justify-center bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 mb-1"
                     >

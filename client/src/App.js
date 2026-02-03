@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import TasksColumn from './components/TasksColumn';
 import ReflectionChat from './components/ReflectionChat';
 import GoalsColumn from './components/GoalsColumn';
-import { BookOpen, MessageSquare, CheckCircle2 } from 'lucide-react';
+import IncompleteTasks from './components/IncompleteTasks';
+import { BookOpen, MessageSquare, CheckCircle2, Mic } from 'lucide-react';
 import ScheduleSection from './components/ScheduleSection';
 import NoteModal from './components/NoteModal';
 import LockCriteriaModal from './components/LockCriteriaModal';
@@ -13,14 +14,17 @@ import NewsDigest from './components/NewsDigest';
 import LearningPath from './components/LearningPath';
 import Login from './components/Login';
 import Toast from './components/Toast';
+import VoiceSettings from './components/VoiceSettings';
 import { useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
+import { VoiceProvider, useVoice } from './contexts/VoiceContext';
 import { api } from './services/api';
 import { LogOut, Loader2 } from 'lucide-react';
 
 const AppContent = () => {
   const { user, loading: authLoading, logout } = useAuth();
   const { showToast } = useToast();
+  const { voiceEnabled } = useVoice();
   const [dailyTasks, setDailyTasks] = useState([]);
   const [weeklyGoals, setWeeklyGoals] = useState([]);
   const [scheduledTasks, setScheduledTasks] = useState([]);
@@ -34,12 +38,16 @@ const AppContent = () => {
   });
   const [weeklyHistory, setWeeklyHistory] = useState([]);
   const [yesterdayNotes, setYesterdayNotes] = useState('');
+  const [incompleteTasks, setIncompleteTasks] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [viewingTasks, setViewingTasks] = useState([]);
   const [activeNoteModal, setActiveNoteModal] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [activeTab, setActiveTab] = useState('todos');
   const [validationState, setValidationState] = useState('idle');
   const [validationError, setValidationError] = useState('');
   const [lockEditModal, setLockEditModal] = useState(null);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
 
   const fetchWeeklyHistory = async () => {
     try {
@@ -82,12 +90,13 @@ const AppContent = () => {
       const todayKey = getTodayKey();
       const yesterdayKey = getYesterdayKey();
 
-      const [tasksRes, goalsRes, scheduledRes, todayLogRes, yesterdayLogRes] = await Promise.all([
+      const [tasksRes, goalsRes, scheduledRes, todayLogRes, yesterdayLogRes, incompleteRes] = await Promise.all([
         api.getTasks(),
         api.getGoals(),
         api.getScheduled(),
         api.getLog(todayKey),
-        api.getLog(yesterdayKey)
+        api.getLog(yesterdayKey),
+        api.getIncompleteTasks()
       ]);
 
       setDailyTasks(tasksRes.data);
@@ -112,6 +121,12 @@ const AppContent = () => {
       if (yesterdayLogRes.data && yesterdayLogRes.data.tomorrowNotes) {
         setYesterdayNotes(yesterdayLogRes.data.tomorrowNotes);
       }
+
+      setIncompleteTasks(incompleteRes.data || []);
+
+      // Reset selected date to today when loading data
+      setSelectedDate(null);
+      setViewingTasks([]);
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -311,6 +326,102 @@ const AppContent = () => {
       setDailyTasks(dailyTasks.filter(t => t._id !== id));
     } catch (error) {
       console.error('Error deleting everyday task:', error);
+    }
+  };
+
+  // Date navigation handlers
+  const navigateDate = async (direction) => {
+    const todayKey = getTodayKey();
+
+    if (direction === 0) {
+      // Go back to today
+      setSelectedDate(null);
+      setViewingTasks([]);
+      return;
+    }
+
+    const currentDate = selectedDate || todayKey;
+    const [year, month, day] = currentDate.split('-').map(Number);
+    const currentDateObj = new Date(year, month - 1, day, 12, 0, 0);
+    currentDateObj.setDate(currentDateObj.getDate() + direction);
+
+    const newDateKey = `${currentDateObj.getFullYear()}-${String(currentDateObj.getMonth() + 1).padStart(2, '0')}-${String(currentDateObj.getDate()).padStart(2, '0')}`;
+
+    // Check if new date is today
+    if (newDateKey === todayKey) {
+      setSelectedDate(null);
+      setViewingTasks([]);
+      return;
+    }
+
+    try {
+      const res = await api.getTasksForDate(newDateKey);
+      setSelectedDate(newDateKey);
+      setViewingTasks(res.data);
+    } catch (error) {
+      console.error('Error loading tasks for date:', error);
+      if (error.response?.data?.error) {
+        showToast(error.response.data.error, 'error');
+      }
+    }
+  };
+
+  const handleAddTaskForDate = async (text) => {
+    const dateKey = selectedDate || getTodayKey();
+    const todayKey = getTodayKey();
+
+    if (dateKey === todayKey) {
+      // Use regular add task for today
+      return handleAddTask(text);
+    }
+
+    try {
+      const newTask = await api.createTaskForDate(dateKey, {
+        text,
+        isEveryday: false
+      });
+      setViewingTasks([...viewingTasks, newTask.data]);
+
+      // If it's a future task, also add to scheduled tasks list
+      const [year, month, day] = dateKey.split('-').map(Number);
+      const dateObj = new Date(year, month - 1, day, 12, 0, 0);
+      const todayObj = new Date(todayKey + 'T12:00:00');
+
+      if (dateObj > todayObj) {
+        // Refresh scheduled tasks
+        const scheduledRes = await api.getScheduled();
+        setScheduledTasks(scheduledRes.data);
+      }
+    } catch (error) {
+      console.error('Error adding task for date:', error);
+    }
+  };
+
+  // Incomplete tasks handlers
+  const handleCompletePastTask = async (taskId, notes) => {
+    try {
+      const result = await api.completeTaskToday(taskId, notes);
+
+      // Remove from incomplete tasks
+      setIncompleteTasks(incompleteTasks.filter(t => t._id !== taskId));
+
+      // Add to daily tasks (it's now a completed task for today)
+      setDailyTasks([...dailyTasks, result.data]);
+
+      showToast('Task completed and moved to today', 'success');
+    } catch (error) {
+      console.error('Error completing past task:', error);
+      showToast('Failed to complete task', 'error');
+    }
+  };
+
+  const handleDeleteIncompleteTask = async (taskId) => {
+    try {
+      await api.deleteTask(taskId);
+      setIncompleteTasks(incompleteTasks.filter(t => t._id !== taskId));
+      showToast('Task removed', 'success');
+    } catch (error) {
+      console.error('Error deleting incomplete task:', error);
     }
   };
 
@@ -648,13 +759,25 @@ const AppContent = () => {
             </h1>
             <p className="text-lg text-slate-400">Track your progress, reflect on your journey, {user.userId}</p>
           </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-red-500/10 border border-slate-700/50 hover:border-red-500/30 rounded-xl text-slate-400 hover:text-red-400 transition-all text-sm font-medium"
-          >
-            <LogOut size={16} />
-            Logout
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowVoiceSettings(true)}
+              className={`flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-indigo-500/10 border border-slate-700/50 hover:border-indigo-500/30 rounded-xl transition-all text-sm font-medium ${
+                voiceEnabled ? 'text-indigo-400' : 'text-slate-400 hover:text-indigo-400'
+              }`}
+              title="Voice Settings"
+            >
+              <Mic size={16} />
+              Voice
+            </button>
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-red-500/10 border border-slate-700/50 hover:border-red-500/30 rounded-xl text-slate-400 hover:text-red-400 transition-all text-sm font-medium"
+            >
+              <LogOut size={16} />
+              Logout
+            </button>
+          </div>
         </header>
 
         <div className="flex justify-center mb-8">
@@ -688,23 +811,28 @@ const AppContent = () => {
 
               <div className="xl:col-span-6">
                 <TasksColumn
-                  dailyTasks={dailyTasks}
+                  dailyTasks={selectedDate ? viewingTasks : dailyTasks}
                   yesterdayNotes={yesterdayNotes}
                   onToggleComplete={handleToggleTaskComplete}
                   onDeleteTask={handleDeleteTask}
-                  onAddTask={handleAddTask}
+                  onAddTask={selectedDate ? handleAddTaskForDate : handleAddTask}
                   onAddEverydayTask={handleAddEverydayTask}
                   onEditEverydayTask={handleEditEverydayTask}
                   onDeleteEverydayTask={handleDeleteEverydayTask}
                   onToggleLock={handleToggleLock}
                   currentDate={getTodayKey()}
+                  selectedDate={selectedDate}
+                  onNavigateDate={navigateDate}
+                  isViewingToday={!selectedDate}
                   scheduleSection={
-                    <ScheduleSection
-                      scheduledTasks={scheduledTasks}
-                      onAddScheduled={handleAddScheduled}
-                      onUpdateScheduled={handleUpdateScheduledDate}
-                      onDeleteScheduled={handleDeleteScheduled}
-                    />
+                    !selectedDate && (
+                      <ScheduleSection
+                        scheduledTasks={scheduledTasks}
+                        onAddScheduled={handleAddScheduled}
+                        onUpdateScheduled={handleUpdateScheduledDate}
+                        onDeleteScheduled={handleDeleteScheduled}
+                      />
+                    )
                   }
                 />
               </div>
@@ -716,6 +844,11 @@ const AppContent = () => {
                   onDeleteGoal={handleDeleteGoal}
                   onAddGoal={handleAddGoal}
                   onEditGoal={handleEditGoal}
+                />
+                <IncompleteTasks
+                  incompleteTasks={incompleteTasks}
+                  onCompleteTask={handleCompletePastTask}
+                  onDeleteTask={handleDeleteIncompleteTask}
                 />
               </div>
             </div>
@@ -793,6 +926,11 @@ const AppContent = () => {
             onCancel={() => setLockEditModal(null)}
           />
         )}
+
+        <VoiceSettings
+          isOpen={showVoiceSettings}
+          onClose={() => setShowVoiceSettings(false)}
+        />
       </div>
     </div>
   );
@@ -801,8 +939,10 @@ const AppContent = () => {
 const App = () => {
   return (
     <ToastProvider>
-      <AppContent />
-      <Toast />
+      <VoiceProvider>
+        <AppContent />
+        <Toast />
+      </VoiceProvider>
     </ToastProvider>
   );
 };

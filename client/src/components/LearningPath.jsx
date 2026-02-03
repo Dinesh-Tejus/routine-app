@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GraduationCap, Loader2, ExternalLink, Plus, Check, ChevronDown, ChevronUp, BookOpen, Globe, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
+import VoiceInput from './VoiceInput';
 
 const LearningPath = ({ onAddArticle }) => {
     const [topic, setTopic] = useState('');
@@ -51,14 +52,16 @@ const LearningPath = ({ onAddArticle }) => {
         }
     }, [learningPath?.topic]);
 
-    const generatePath = async () => {
-        if (!topic.trim()) return;
+    const generatePath = async (voiceTopic = null) => {
+        const topicToUse = voiceTopic || topic;
+        if (!topicToUse.trim()) return;
 
+        if (voiceTopic) setTopic(voiceTopic);
         setLoading(true);
         setError(null);
 
         try {
-            const response = await api.generateLearningPath(topic, depth);
+            const response = await api.generateLearningPath(topicToUse, depth);
             setLearningPath(response.data);
             setCompletedItems(new Set());
             // Expand first source by default
@@ -71,6 +74,25 @@ const LearningPath = ({ onAddArticle }) => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleVoiceInput = async (text) => {
+        // Parse voice commands like "deep dive on transformers"
+        let parsedTopic = text;
+
+        const deepDiveMatch = text.match(/deep\s*dive\s+(?:on\s+)?(.+)/i);
+        const basicMatch = text.match(/(?:basic|quick)\s+(?:overview\s+)?(?:on\s+)?(.+)/i);
+
+        if (deepDiveMatch) {
+            parsedTopic = deepDiveMatch[1].trim();
+            setDepth('deep');
+        } else if (basicMatch) {
+            parsedTopic = basicMatch[1].trim();
+            setDepth('basic');
+        }
+
+        setTopic(parsedTopic);
+        await generatePath(parsedTopic);
     };
 
     const handleReset = async () => {
@@ -209,14 +231,22 @@ const LearningPath = ({ onAddArticle }) => {
                     </div>
 
                     <div className="w-full max-w-sm space-y-3">
-                        <input
-                            type="text"
-                            value={topic}
-                            onChange={(e) => setTopic(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && generatePath()}
-                            placeholder="e.g., RAG pipelines, fine-tuning LLMs, vector databases..."
-                            className="w-full px-3 py-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 text-white placeholder-slate-500"
-                        />
+                        <div className="flex items-center gap-2">
+                            <VoiceInput
+                                onTranscription={handleVoiceInput}
+                                disabled={loading}
+                                size={18}
+                                className="flex-shrink-0"
+                            />
+                            <input
+                                type="text"
+                                value={topic}
+                                onChange={(e) => setTopic(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && generatePath()}
+                                placeholder="e.g., RAG pipelines, fine-tuning LLMs..."
+                                className="flex-1 px-3 py-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 text-white placeholder-slate-500"
+                            />
+                        </div>
 
                         <div className="flex gap-2 justify-center">
                             <button

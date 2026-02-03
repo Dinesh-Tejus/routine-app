@@ -16,6 +16,14 @@ export const api = {
   updateTask: (id, task) => axios.put(`${API_BASE_URL}/tasks/${id}`, task),
   deleteTask: (id) => axios.delete(`${API_BASE_URL}/tasks/${id}`),
 
+  // Date navigation
+  getTasksForDate: (date) => axios.get(`${API_BASE_URL}/tasks/date/${date}`),
+  createTaskForDate: (date, task) => axios.post(`${API_BASE_URL}/tasks/date/${date}`, task),
+
+  // Incomplete tasks
+  getIncompleteTasks: () => axios.get(`${API_BASE_URL}/tasks/incomplete`),
+  completeTaskToday: (id, notes) => axios.post(`${API_BASE_URL}/tasks/${id}/complete-today`, { notes }),
+
   // Article management for reading tasks
   addArticleToTask: (taskId, article) => axios.post(`${API_BASE_URL}/tasks/${taskId}/articles`, article),
   updateArticleStatus: (taskId, articleIndex, status) => axios.patch(`${API_BASE_URL}/tasks/${taskId}/articles/${articleIndex}`, { status }),
@@ -57,4 +65,14 @@ export const api = {
   updateLearningProgress: (completedItems) => axios.post(`${API_BASE_URL}/research/update-learning-progress`, { completedItems }),
   clearLearningPath: () => axios.post(`${API_BASE_URL}/research/clear-learning-path`),
   saveWeeklyDigest: (digest) => axios.post(`${API_BASE_URL}/research/save-weekly-digest`, { digest }),
+
+  // Voice Transcription
+  transcribeAudio: (audioBlob) => {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.webm');
+    return axios.post(`${API_BASE_URL}/voice/transcribe`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  checkVoiceHealth: () => axios.get(`${API_BASE_URL}/voice/health`),
 };

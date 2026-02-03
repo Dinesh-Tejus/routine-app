@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Send, Loader2, Calendar, Clock, Check, Plus, X } from 'lucide-react';
+import { Sparkles, Send, Loader2, Calendar, Clock, Plus, X } from 'lucide-react';
 import { api } from '../services/api';
+import VoiceInput from './VoiceInput';
+import VoiceResponse from './VoiceResponse';
+import { useVoice } from '../contexts/VoiceContext';
 
 const TaskPlannerChat = ({ onAddTasks }) => {
+    const { autoReadResponses } = useVoice();
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState([
         { type: 'bot', text: 'Hey! I can help you plan your day. Just tell me what you need to do, like "Buy milk today" or "Meeting tomorrow at 3pm".' }
@@ -19,17 +23,17 @@ const TaskPlannerChat = ({ onAddTasks }) => {
         scrollToBottom();
     }, [messages, isProcessing, pendingTasks]);
 
-    const handleSend = async () => {
-        if (!input.trim() || isProcessing) return;
+    const handleSend = async (voiceText = null) => {
+        const textToSend = voiceText || input;
+        if (!textToSend.trim() || isProcessing) return;
 
-        const userMsg = { type: 'user', text: input };
+        const userMsg = { type: 'user', text: textToSend };
         setMessages(prev => [...prev, userMsg]);
-        const text = input;
-        setInput('');
+        if (!voiceText) setInput('');
         setIsProcessing(true);
 
         try {
-            const res = await api.parseTasks(text);
+            const res = await api.parseTasks(textToSend);
             const tasks = res.data;
 
             if (tasks && tasks.length > 0) {
@@ -50,6 +54,11 @@ const TaskPlannerChat = ({ onAddTasks }) => {
         } finally {
             setIsProcessing(false);
         }
+    };
+
+    const handleVoiceInput = async (text) => {
+        setInput(text);
+        await handleSend(text);
     };
 
     const handleConfirmTasks = () => {
@@ -89,7 +98,17 @@ const TaskPlannerChat = ({ onAddTasks }) => {
                                 ? 'bg-slate-800 text-slate-100 rounded-tr-none border border-slate-700'
                                 : 'bg-orange-500/10 text-orange-100 rounded-tl-none border border-orange-500/20'
                             }`}>
-                            {msg.text}
+                            <div className="flex items-start gap-2">
+                                <span className="flex-1">{msg.text}</span>
+                                {msg.type === 'bot' && (
+                                    <VoiceResponse
+                                        text={msg.text}
+                                        autoPlay={autoReadResponses && idx === messages.length - 1}
+                                        size={12}
+                                        className="flex-shrink-0 mt-0.5"
+                                    />
+                                )}
+                            </div>
                         </div>
                     </div>
                 ))}
@@ -167,23 +186,31 @@ const TaskPlannerChat = ({ onAddTasks }) => {
 
             {/* Input Area */}
             <div className="p-4 border-t border-slate-700/50">
-                <div className="relative flex items-center">
-                    <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                        placeholder="e.g. Need to call the bank tomorrow morning"
-                        className="w-full pl-4 pr-12 py-3 bg-slate-800/50 border border-slate-700 rounded-2xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all"
+                <div className="flex items-center gap-2">
+                    <VoiceInput
+                        onTranscription={handleVoiceInput}
                         disabled={isProcessing}
+                        size={18}
+                        className="flex-shrink-0"
                     />
-                    <button
-                        onClick={handleSend}
-                        disabled={!input.trim() || isProcessing}
-                        className="absolute right-2 p-2 bg-orange-500 text-white rounded-xl hover:bg-orange-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                    </button>
+                    <div className="relative flex-1 flex items-center">
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                            placeholder="e.g. Need to call the bank tomorrow morning"
+                            className="w-full pl-4 pr-12 py-3 bg-slate-800/50 border border-slate-700 rounded-2xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all"
+                            disabled={isProcessing}
+                        />
+                        <button
+                            onClick={() => handleSend()}
+                            disabled={!input.trim() || isProcessing}
+                            className="absolute right-2 p-2 bg-orange-500 text-white rounded-xl hover:bg-orange-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

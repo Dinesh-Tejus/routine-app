@@ -60,6 +60,257 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get tasks for a specific date (supports ±2 weeks navigation)
+router.get('/date/:date', async (req, res) => {
+  try {
+    const requestedDate = req.params.date;
+    const today = getAdjustedDate();
+
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      log.warn('Invalid date format', { userId: req.user.userId, date: requestedDate });
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+
+    // Validate date is within ±2 weeks
+    const todayDate = new Date(today + 'T12:00:00');
+    const reqDate = new Date(requestedDate + 'T12:00:00');
+    const diffDays = Math.round((reqDate - todayDate) / (1000 * 60 * 60 * 24));
+
+    if (Math.abs(diffDays) > 14) {
+      log.warn('Date out of range', { userId: req.user.userId, date: requestedDate, diffDays });
+      return res.status(400).json({ error: 'Date must be within ±2 weeks of today' });
+    }
+
+    log.info('Fetching tasks for date', { userId: req.user.userId, date: requestedDate, diffDays });
+
+    const yesterday = getAdjustedYesterday();
+
+    // Always get everyday tasks
+    const everydayTasks = await DailyTask.find({
+      userId: req.user.userId,
+      isEveryday: true
+    });
+
+    // Process everyday tasks with streak logic
+    const processedEverydayTasks = await Promise.all(everydayTasks.map(async (task) => {
+      let changed = false;
+
+      // Reset streak if last completed before yesterday
+      if (task.streak > 0 && task.lastCompletedDate && task.lastCompletedDate < yesterday) {
+        log.info('Resetting streak for task', { taskId: task._id, taskText: task.text, oldStreak: task.streak });
+        task.streak = 0;
+        changed = true;
+      }
+
+      if (task.completed && task.lastCompletedDate !== today) {
+        log.debug('Resetting daily task completion', { taskId: task._id });
+        task.completed = false;
+        changed = true;
+      }
+
+      if (changed) {
+        await task.save();
+      }
+
+      // For viewing purposes, calculate if task was completed on the requested date
+      const taskData = task.toObject();
+      if (requestedDate !== today) {
+        taskData.wasCompletedOnDate = task.lastCompletedDate === requestedDate;
+        // For past dates, show as completed if it was completed on that date
+        if (diffDays < 0) {
+          taskData.completed = task.lastCompletedDate === requestedDate;
+        } else {
+          // Future dates: everyday tasks show as incomplete
+          taskData.completed = false;
+        }
+      }
+
+      return taskData;
+    }));
+
+    let dateTasks = [];
+
+    if (diffDays < 0) {
+      // Past date: Get daily tasks for that specific date
+      dateTasks = await DailyTask.find({
+        userId: req.user.userId,
+        date: requestedDate,
+        isEveryday: false
+      });
+    } else if (diffDays === 0) {
+      // Today: Get today's tasks
+      dateTasks = await DailyTask.find({
+        userId: req.user.userId,
+        date: today,
+        isEveryday: false
+      });
+    } else {
+      // Future date: Get scheduled tasks for that date
+      const ScheduledTask = require('../models/ScheduledTask');
+      const startOfDay = new Date(requestedDate + 'T00:00:00');
+      const endOfDay = new Date(requestedDate + 'T23:59:59');
+
+      const scheduled = await ScheduledTask.find({
+        userId: req.user.userId,
+        date: { $gte: startOfDay, $lte: endOfDay }
+      });
+
+      // Convert scheduled tasks to a similar format
+      dateTasks = scheduled.map(t => ({
+        _id: t._id,
+        text: t.text,
+        date: requestedDate,
+        completed: false,
+        isEveryday: false,
+        isScheduled: true, // Flag to identify scheduled tasks
+        notes: ''
+      }));
+    }
+
+    const allTasks = [...processedEverydayTasks, ...dateTasks];
+
+    log.success('Tasks fetched for date', {
+      userId: req.user.userId,
+      date: requestedDate,
+      everydayCount: processedEverydayTasks.length,
+      dateTasksCount: dateTasks.length
+    });
+
+    res.json(allTasks);
+  } catch (error) {
+    log.failure('Fetch tasks for date', error, { userId: req.user.userId, date: req.params.date });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create task for a specific date
+router.post('/date/:date', async (req, res) => {
+  try {
+    const requestedDate = req.params.date;
+    const { text, isEveryday } = req.body;
+    const today = getAdjustedDate();
+
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      log.warn('Invalid date format', { userId: req.user.userId, date: requestedDate });
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      log.warn('Create task failed - missing text', { userId: req.user.userId });
+      return res.status(400).json({ error: 'Task text is required' });
+    }
+
+    // Validate date is within ±2 weeks
+    const todayDate = new Date(today + 'T12:00:00');
+    const reqDate = new Date(requestedDate + 'T12:00:00');
+    const diffDays = Math.round((reqDate - todayDate) / (1000 * 60 * 60 * 24));
+
+    if (Math.abs(diffDays) > 14) {
+      log.warn('Date out of range', { userId: req.user.userId, date: requestedDate, diffDays });
+      return res.status(400).json({ error: 'Date must be within ±2 weeks of today' });
+    }
+
+    log.info('Creating task for date', { userId: req.user.userId, date: requestedDate, text });
+
+    if (diffDays > 0) {
+      // Future date: Create as scheduled task
+      const ScheduledTask = require('../models/ScheduledTask');
+      const scheduledDate = new Date(requestedDate + 'T12:00:00');
+
+      const task = new ScheduledTask({
+        text: text.trim(),
+        date: scheduledDate,
+        userId: req.user.userId
+      });
+      await task.save();
+
+      log.success('Scheduled task created', { userId: req.user.userId, taskId: task._id, text: task.text, date: requestedDate });
+      res.json({
+        _id: task._id,
+        text: task.text,
+        date: requestedDate,
+        completed: false,
+        isEveryday: false,
+        isScheduled: true,
+        notes: ''
+      });
+    } else {
+      // Today or past date: Create as daily task
+      const task = new DailyTask({
+        text: text.trim(),
+        isEveryday: isEveryday || false,
+        completed: false,
+        notes: '',
+        date: requestedDate,
+        userId: req.user.userId
+      });
+      await task.save();
+
+      log.success('Task created for date', { userId: req.user.userId, taskId: task._id, text: task.text, date: requestedDate });
+      res.json(task);
+    }
+  } catch (error) {
+    log.failure('Create task for date', error, { userId: req.user.userId, date: req.params.date });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all incomplete tasks from past dates (excluding everyday tasks)
+router.get('/incomplete', async (req, res) => {
+  try {
+    const today = getAdjustedDate();
+    log.info('Fetching incomplete tasks', { userId: req.user.userId, today });
+
+    const incompleteTasks = await DailyTask.find({
+      userId: req.user.userId,
+      isEveryday: false,
+      completed: false,
+      date: { $lt: today }
+    }).sort({ date: -1 });
+
+    log.success('Incomplete tasks fetched', { userId: req.user.userId, count: incompleteTasks.length });
+    res.json(incompleteTasks);
+  } catch (error) {
+    log.failure('Fetch incomplete tasks', error, { userId: req.user.userId });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Complete a past task and move it to today
+router.post('/:id/complete-today', async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const { notes } = req.body;
+    const today = getAdjustedDate();
+
+    log.info('Completing task today', { userId: req.user.userId, taskId });
+
+    const task = await DailyTask.findOne({ _id: taskId, userId: req.user.userId });
+    if (!task) {
+      log.warn('Complete task today failed - not found', { userId: req.user.userId, taskId });
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    // Update task: move to today and mark as completed
+    task.date = today;
+    task.completed = true;
+    task.lastCompletedDate = today;
+    if (notes !== undefined) {
+      task.notes = notes;
+    }
+
+    await task.save();
+
+    log.success('Task completed today', { userId: req.user.userId, taskId, text: task.text });
+    res.json(task);
+  } catch (error) {
+    log.failure('Complete task today', error, { userId: req.user.userId, taskId: req.params.id });
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get completed tasks for the current week
 router.get('/history/weekly', async (req, res) => {
   try {

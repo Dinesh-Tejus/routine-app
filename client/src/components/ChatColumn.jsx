@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, ExternalLink, BookOpen, Plus, Check, Bookmark } from 'lucide-react';
+import { Send, Loader2, ExternalLink, BookOpen, Plus, Check } from 'lucide-react';
+import VoiceInput from './VoiceInput';
+import VoiceResponse from './VoiceResponse';
+import { useVoice } from '../contexts/VoiceContext';
 
 const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
+    const { autoReadResponses } = useVoice();
     const [query, setQuery] = useState('');
     const [messages, setMessages] = useState(initialMessages);
     const [loading, setLoading] = useState(false);
@@ -15,16 +19,17 @@ const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
         }
     }, [initialMessages]);
 
-    const handleSearch = async () => {
-        if (!query.trim() || loading) return;
+    const handleSearch = async (voiceText = null) => {
+        const searchQuery = voiceText || query;
+        if (!searchQuery.trim() || loading) return;
 
-        const userMessage = { type: 'user', text: query };
+        const userMessage = { type: 'user', text: searchQuery };
         setMessages([...messages, userMessage]);
-        setQuery('');
+        if (!voiceText) setQuery('');
         setLoading(true);
 
         try {
-            const data = await onSearch(query);
+            const data = await onSearch(searchQuery);
             const botMessage = {
                 type: 'bot',
                 answer: data.answer,
@@ -41,6 +46,11 @@ const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleVoiceInput = async (text) => {
+        setQuery(text);
+        await handleSearch(text);
     };
 
     const handleAddClick = async (article, status = 'read') => {
@@ -117,7 +127,15 @@ const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
                                 <div className="space-y-3">
                                     {msg.answer && (
                                         <div className="bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20 text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
-                                            {msg.answer}
+                                            <div className="flex items-start gap-2">
+                                                <span className="flex-1">{msg.answer}</span>
+                                                <VoiceResponse
+                                                    text={msg.answer}
+                                                    autoPlay={autoReadResponses && idx === messages.length - 1}
+                                                    size={14}
+                                                    className="flex-shrink-0"
+                                                />
+                                            </div>
                                         </div>
                                     )}
 
@@ -187,7 +205,13 @@ const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
             </div>
 
             {/* Input Area */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+                <VoiceInput
+                    onTranscription={handleVoiceInput}
+                    disabled={loading}
+                    size={16}
+                    className="flex-shrink-0"
+                />
                 <input
                     type="text"
                     value={query}
@@ -198,7 +222,7 @@ const ChatColumn = ({ onSearch, onAddArticle, initialMessages = [] }) => {
                     disabled={loading}
                 />
                 <button
-                    onClick={handleSearch}
+                    onClick={() => handleSearch()}
                     disabled={loading || !query.trim()}
                     className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
