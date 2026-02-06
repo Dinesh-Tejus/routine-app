@@ -33,6 +33,8 @@ const NewsDigest = ({ onAddArticle }) => {
                 }
             } catch (err) {
                 console.error('Failed to load persisted digest:', err);
+                const detail = err.response?.data?.details || err.response?.data?.error || err.message;
+                setError(detail);
             } finally {
                 setInitialLoading(false);
             }
@@ -50,13 +52,21 @@ const NewsDigest = ({ onAddArticle }) => {
                 ? customTopics.split(',').map(t => t.trim()).filter(Boolean)
                 : defaultTopics);
 
+            console.log('[NewsDigest] Sending topics:', topicsToUse);
             const response = await api.getNewsDigest(topicsToUse);
+            console.log('[NewsDigest] Raw response:', response.data);
             setDigest(response.data);
             // Expand all topics by default
             setExpandedTopics(new Set(topicsToUse));
+
+            // Check if all topics failed
+            if (response.data?.topics?.length > 0 && response.data.topics.every(t => !t.success)) {
+                console.log('[NewsDigest] All topics failed:', response.data.topics.map(t => ({ topic: t.topic, success: t.success, summary: t.summary })));
+                setError('All topics failed to fetch. Please check your Tavily API key or try again later.');
+            }
         } catch (err) {
             console.error('News digest error:', err);
-            setError(err.response?.data?.error || 'Failed to generate news digest');
+            setError(err.response?.data?.details || err.response?.data?.error || 'Failed to generate news digest');
         } finally {
             setLoading(false);
         }
@@ -72,7 +82,8 @@ const NewsDigest = ({ onAddArticle }) => {
     };
 
     const handleAddClick = async (article, status = 'read') => {
-        if (addedArticles.has(article.url)) return;
+        // Block new adds for already-added articles, but allow 'saved' status changes
+        if (addedArticles.has(article.url) && status !== 'saved') return;
 
         try {
             const result = await onAddArticle(article, status);
@@ -94,17 +105,16 @@ const NewsDigest = ({ onAddArticle }) => {
     };
 
     const handleButtonClick = (article, e) => {
-        if (addedArticles.has(article.url)) return;
-
         const articleKey = article.url;
+        const alreadyAdded = addedArticles.has(article.url);
 
         // If there's already a pending single click, this is a double click
         if (clickTimers.current[articleKey]) {
             clearTimeout(clickTimers.current[articleKey]);
             delete clickTimers.current[articleKey];
             handleAddClick(article, 'saved');
-        } else {
-            // Set up single click timer
+        } else if (!alreadyAdded) {
+            // Set up single click timer (only for new articles)
             clickTimers.current[articleKey] = setTimeout(() => {
                 delete clickTimers.current[articleKey];
                 handleAddClick(article, 'read');
@@ -171,7 +181,7 @@ const NewsDigest = ({ onAddArticle }) => {
                     </div>
                     {digest && (
                         <button
-                            onClick={generateDigest}
+                            onClick={() => generateDigest()}
                             disabled={loading}
                             className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-all"
                             title="Refresh digest"
@@ -212,7 +222,7 @@ const NewsDigest = ({ onAddArticle }) => {
                     </div>
 
                     <button
-                        onClick={generateDigest}
+                        onClick={() => generateDigest()}
                         disabled={loading}
                         className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl hover:from-blue-600 hover:to-indigo-600 transition-all shadow-lg disabled:opacity-50 flex items-center gap-2"
                     >
@@ -242,8 +252,14 @@ const NewsDigest = ({ onAddArticle }) => {
             )}
 
             {error && (
-                <div className="bg-red-500/10 text-red-300 px-3 py-2 rounded-lg text-sm border border-red-500/30 mb-3">
-                    {error}
+                <div className="bg-red-500/10 text-red-300 px-3 py-2 rounded-lg text-sm border border-red-500/30 mb-3 flex items-start justify-between gap-2">
+                    <span>{error}</span>
+                    <button
+                        onClick={() => setError(null)}
+                        className="text-red-400 hover:text-red-300 flex-shrink-0 font-bold"
+                    >
+                        ×
+                    </button>
                 </div>
             )}
 
@@ -312,15 +328,14 @@ const NewsDigest = ({ onAddArticle }) => {
                                                     </a>
                                                     <button
                                                         onClick={(e) => handleButtonClick(article, e)}
-                                                        disabled={addedArticles.has(article.url)}
                                                         className={`px-2.5 flex items-center justify-center transition-all ${
                                                             animatingButtons.has(article.url)
                                                                 ? 'text-blue-400 bg-blue-500/20 animate-pulse scale-110'
                                                                 : addedArticles.has(article.url)
-                                                                ? 'text-blue-500 bg-blue-500/5 cursor-default'
+                                                                ? 'text-blue-500 bg-blue-500/5 hover:bg-blue-500/15'
                                                                 : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'
                                                         }`}
-                                                        title={addedArticles.has(article.url) ? "Added to reading list" : "Click: Read | Double-click: Save for Later"}
+                                                        title={addedArticles.has(article.url) ? "Double-click to save for later" : "Click: Read | Double-click: Save for Later"}
                                                     >
                                                         {addedArticles.has(article.url) ? (
                                                             <Check size={14} className={animatingButtons.has(article.url) ? 'animate-bounce' : ''} />

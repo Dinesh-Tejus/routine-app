@@ -1,10 +1,62 @@
 const express = require('express');
 const router = express.Router();
 const ScheduledTask = require('../models/ScheduledTask');
+const DailyTask = require('../models/DailyTask');
 const auth = require('../middleware/auth');
+const { getAdjustedDate } = require('../utils/dateUtils');
 const { scheduled: log } = require('../utils/logger');
 
 router.use(auth);
+
+// Sync past-due scheduled tasks to daily tasks
+router.post('/sync', async (req, res) => {
+  try {
+    const today = getAdjustedDate();
+    const todayNoon = new Date(today + 'T12:00:00');
+    const userId = req.user.userId;
+
+    log.info('Syncing past-due scheduled tasks', { userId, today });
+
+    // Find all scheduled tasks where date <= today (past-due and today's)
+    const pastDueTasks = await ScheduledTask.find({
+      userId,
+      date: { $lt: todayNoon }
+    });
+
+    const converted = [];
+    for (const task of pastDueTasks) {
+      try {
+        // Determine the date string for the daily task
+        const taskDate = new Date(task.date);
+        const dateStr = `${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}-${String(taskDate.getDate()).padStart(2, '0')}`;
+
+        const dailyTask = new DailyTask({
+          text: task.text,
+          isEveryday: false,
+          completed: false,
+          notes: '',
+          date: dateStr,
+          fromScheduled: true,
+          userId
+        });
+        await dailyTask.save();
+        await ScheduledTask.findByIdAndDelete(task._id);
+        converted.push(dailyTask);
+      } catch (err) {
+        log.warn('Failed to convert scheduled task', { taskId: task._id, error: err.message });
+      }
+    }
+
+    // Get remaining scheduled tasks
+    const remaining = await ScheduledTask.find({ userId }).sort({ date: 1 });
+
+    log.success('Scheduled tasks synced', { userId, convertedCount: converted.length, remainingCount: remaining.length });
+    res.json({ converted, remaining });
+  } catch (error) {
+    log.failure('Sync scheduled tasks', error, { userId: req.user.userId });
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.get('/', async (req, res) => {
   try {

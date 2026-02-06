@@ -35,6 +35,7 @@ export const api = {
   deleteGoal: (id) => axios.delete(`${API_BASE_URL}/goals/${id}`),
 
   getScheduled: () => axios.get(`${API_BASE_URL}/scheduled`),
+  syncScheduled: () => axios.post(`${API_BASE_URL}/scheduled/sync`),
   createScheduled: (task) => axios.post(`${API_BASE_URL}/scheduled`, task),
   updateScheduled: (id, task) => axios.put(`${API_BASE_URL}/scheduled/${id}`, task),
   deleteScheduled: (id) => axios.delete(`${API_BASE_URL}/scheduled/${id}`),

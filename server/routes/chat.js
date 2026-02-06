@@ -27,11 +27,23 @@ router.post('/search', async (req, res) => {
             return res.status(400).json({ error: 'Query is required' });
         }
 
-        const enhancedQuery = `${query}. Give me most recent articles or papers that helps an AI engineer or researcher to build production grade AI applications`;
+        const enhancedQuery = `${query} AI machine learning research`;
 
         const data = await tavilyService.search(enhancedQuery, {
-            searchDepth: 'basic',
-            maxResults: 5
+            searchDepth: 'advanced',
+            topic: 'news',
+            maxResults: 5,
+            includeAnswer: 'advanced',
+            includeDomains: [
+                'arxiv.org',
+                'huggingface.co',
+                'openai.com',
+                'deepmind.google',
+                'ai.meta.com',
+                'pytorch.org',
+                'github.com',
+                'towardsdatascience.com'
+            ]
         });
 
         const result = tavilyService.formatSearchResults(data);
@@ -39,7 +51,8 @@ router.post('/search', async (req, res) => {
         log.success('Article search complete', {
             userId: req.user.userId,
             query,
-            resultCount: result.articles?.length || 0
+            resultCount: result.articles?.length || 0,
+            hasAnswer: !!result.answer
         });
 
         res.json(result);
@@ -47,9 +60,9 @@ router.post('/search', async (req, res) => {
     } catch (error) {
         log.failure('Article search', error, { userId: req.user.userId, query: req.body?.query });
         if (error.message.includes('API key')) {
-            return res.status(500).json({ error: error.message });
+            return res.status(500).json({ error: error.message, details: error.message });
         }
-        res.status(500).json({ error: 'Failed to search articles' });
+        res.status(500).json({ error: 'Failed to search articles', details: error.message });
     }
 });
 
@@ -57,6 +70,7 @@ router.post('/search', async (req, res) => {
 router.post('/news-digest', async (req, res) => {
     try {
         const { topics = ['AI agents', 'LLMs', 'RAG'] } = req.body;
+        console.log('[news-digest] Received topics:', JSON.stringify(topics));
         log.info('Generating news digest', { userId: req.user.userId, topics });
 
         const results = await Promise.all(
@@ -72,6 +86,7 @@ router.post('/news-digest', async (req, res) => {
                             searchDepth: 'advanced'
                         }
                     );
+                    console.log(`[news-digest] Topic "${topic}" success — ${data.results?.length || 0} articles, answer length: ${data.answer?.length || 0}`);
                     log.debug('Topic fetched', { topic, articleCount: data.results?.length || 0 });
                     return {
                         topic,
@@ -119,6 +134,7 @@ router.post('/news-digest', async (req, res) => {
             { upsert: true }
         );
 
+        console.log('[news-digest] Final digest:', JSON.stringify({ generatedAt: digest.generatedAt, topicCount: digest.topics.length, topics: digest.topics.map(t => ({ topic: t.topic, success: t.success, articleCount: t.articles?.length })) }));
         log.success('News digest generated', {
             userId,
             topicCount: topics.length,
@@ -129,9 +145,9 @@ router.post('/news-digest', async (req, res) => {
     } catch (error) {
         log.failure('Generate news digest', error, { userId: req.user.userId });
         if (error.message.includes('API key')) {
-            return res.status(500).json({ error: error.message });
+            return res.status(500).json({ error: error.message, details: error.message });
         }
-        res.status(500).json({ error: 'Failed to generate news digest' });
+        res.status(500).json({ error: 'Failed to generate news digest', details: error.message });
     }
 });
 

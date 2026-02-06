@@ -274,7 +274,7 @@ const LearningPath = ({ onAddArticle }) => {
                     </div>
 
                     <button
-                        onClick={generatePath}
+                        onClick={() => generatePath()}
                         disabled={loading || !topic.trim()}
                         className="px-6 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all shadow-lg disabled:opacity-50 flex items-center gap-2"
                     >

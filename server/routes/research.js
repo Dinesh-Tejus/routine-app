@@ -125,7 +125,7 @@ router.get('/data', async (req, res) => {
         });
     } catch (error) {
         log.failure('Fetch research data', error, { userId: req.user.userId });
-        res.status(500).json({ error: 'Failed to get research data' });
+        res.status(500).json({ error: 'Failed to get research data', details: error.message });
     }
 });
 

@@ -90,10 +90,17 @@ const AppContent = () => {
       const todayKey = getTodayKey();
       const yesterdayKey = getYesterdayKey();
 
-      const [tasksRes, goalsRes, scheduledRes, todayLogRes, yesterdayLogRes, incompleteRes] = await Promise.all([
+      // Sync past-due scheduled tasks on the backend first
+      let syncResult;
+      try {
+        syncResult = await api.syncScheduled();
+      } catch (err) {
+        console.error('Error syncing scheduled tasks:', err);
+      }
+
+      const [tasksRes, goalsRes, todayLogRes, yesterdayLogRes, incompleteRes] = await Promise.all([
         api.getTasks(),
         api.getGoals(),
-        api.getScheduled(),
         api.getLog(todayKey),
         api.getLog(yesterdayKey),
         api.getIncompleteTasks()
@@ -102,10 +109,13 @@ const AppContent = () => {
       setDailyTasks(tasksRes.data);
       setWeeklyGoals(goalsRes.data);
 
-      // Sync scheduled tasks for today before setting state
-      const { updatedScheduled, updatedDaily } = await syncScheduledToToday(scheduledRes.data, tasksRes.data);
-      setScheduledTasks(updatedScheduled);
-      setDailyTasks(updatedDaily);
+      // Use remaining scheduled tasks from sync, or fetch fresh if sync failed
+      if (syncResult?.data?.remaining) {
+        setScheduledTasks(syncResult.data.remaining);
+      } else {
+        const scheduledRes = await api.getScheduled();
+        setScheduledTasks(scheduledRes.data);
+      }
 
       setDailyLog({
         workedOn: '',
@@ -471,7 +481,7 @@ const AppContent = () => {
     const toSync = scheduledList.filter(t => {
       const d = new Date(t.date);
       const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      return dStr === todayStr;
+      return dStr <= todayStr;
     });
 
     if (toSync.length === 0) return { updatedScheduled: scheduledList, updatedDaily: dailyList };
@@ -550,17 +560,17 @@ const AppContent = () => {
 
   const getWeeklyScheduledTasks = () => {
     const now = getAdjustedNow();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
-    startOfWeek.setHours(0, 0, 0, 0);
+    // Only show future scheduled tasks (today and beyond handled by sync)
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
 
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + (6 - now.getDay())); // Saturday
     endOfWeek.setHours(23, 59, 59, 999);
 
     return (scheduledTasks || []).filter(task => {
       const taskDate = new Date(task.date);
-      return taskDate >= startOfWeek && taskDate <= endOfWeek;
+      return taskDate > todayStart && taskDate <= endOfWeek;
     });
   };
 
@@ -666,6 +676,27 @@ const AppContent = () => {
       return { success: true };
     } catch (error) {
       console.error('Error adding article to task:', error);
+
+      // Handle duplicate article (400 "already exists")
+      if (error.response?.status === 400 && error.response?.data?.error?.includes('already exists')) {
+        if (status === 'saved' && targetTask) {
+          // Double-click on already-added article: change its status to 'saved'
+          try {
+            const articleIndex = targetTask.articles?.findIndex(a => a.url === article.url);
+            if (articleIndex >= 0) {
+              const updated = await api.updateArticleStatus(targetTask._id, articleIndex, 'saved');
+              setDailyTasks(dailyTasks.map(t => t._id === targetTask._id ? updated.data : t));
+              showToast('Article saved for later', 'success');
+              return { success: true, alreadyExists: true };
+            }
+          } catch (updateError) {
+            console.error('Error updating article status:', updateError);
+          }
+        }
+        showToast('Article already added to reading list', 'info');
+        return { success: true, alreadyExists: true };
+      }
+
       showToast('Failed to add article to reading task.', 'error');
       return { success: false };
     }

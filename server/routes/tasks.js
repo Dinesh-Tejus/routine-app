@@ -258,9 +258,11 @@ router.post('/date/:date', async (req, res) => {
 });
 
 // Get all incomplete tasks from past dates (excluding everyday tasks)
+// Also includes past-due scheduled tasks that haven't been synced yet
 router.get('/incomplete', async (req, res) => {
   try {
     const today = getAdjustedDate();
+    const todayNoon = new Date(today + 'T12:00:00');
     log.info('Fetching incomplete tasks', { userId: req.user.userId, today });
 
     const incompleteTasks = await DailyTask.find({
@@ -270,8 +272,36 @@ router.get('/incomplete', async (req, res) => {
       date: { $lt: today }
     }).sort({ date: -1 });
 
-    log.success('Incomplete tasks fetched', { userId: req.user.userId, count: incompleteTasks.length });
-    res.json(incompleteTasks);
+    // Also find past-due scheduled tasks
+    const ScheduledTask = require('../models/ScheduledTask');
+    const pastDueScheduled = await ScheduledTask.find({
+      userId: req.user.userId,
+      date: { $lt: todayNoon }
+    }).sort({ date: -1 });
+
+    // Convert scheduled tasks to a compatible format
+    const scheduledAsIncomplete = pastDueScheduled.map(t => {
+      const taskDate = new Date(t.date);
+      const dateStr = `${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}-${String(taskDate.getDate()).padStart(2, '0')}`;
+      return {
+        _id: t._id,
+        text: t.text,
+        date: dateStr,
+        completed: false,
+        isEveryday: false,
+        isScheduled: true,
+        notes: ''
+      };
+    });
+
+    const allIncomplete = [...incompleteTasks, ...scheduledAsIncomplete];
+
+    log.success('Incomplete tasks fetched', {
+      userId: req.user.userId,
+      dailyCount: incompleteTasks.length,
+      scheduledCount: scheduledAsIncomplete.length
+    });
+    res.json(allIncomplete);
   } catch (error) {
     log.failure('Fetch incomplete tasks', error, { userId: req.user.userId });
     res.status(500).json({ error: error.message });
@@ -519,6 +549,10 @@ router.post('/:id/articles', async (req, res) => {
       status,
       addedAt: new Date()
     });
+
+    // Also append to notes for visibility
+    const articleNote = `\n- ${title}: ${url}`;
+    task.notes = (task.notes || '') + articleNote;
 
     await task.save();
     log.success('Article added', { userId: req.user.userId, taskId, title, status });
