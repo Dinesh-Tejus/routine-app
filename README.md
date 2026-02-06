@@ -35,6 +35,7 @@ Built as a full-stack application with React and Express, it integrates Google G
 ## Some Screenshots
 ![Landing Page](img/landingpage.png)
 ![Reading artciles](img/readingpage.png)
+![Learning Path](img/Learninpath.png)
 
 ---
 ## Key Features
